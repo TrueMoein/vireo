@@ -17,16 +17,25 @@ app that looks and feels better than Raycast or the ChatGPT Mac app.
 
 ## Amendments to the approved plan
 
-- **2026-05-23 — LLM provider strategy switched to OpenRouter.** Instead of
-  shipping two adapters (Anthropic + OpenAI) at v0.1, a single
+- **2026-05-23 — LLM provider strategy switched to OpenRouter.** Single
   `OpenRouterAdapter` covers ~100 models via one OpenAI-compatible API and
-  one Keychain entry. Model name becomes a runtime setting. Defaults:
-  `ibm-granite/granite-4.1-8b` for routine corrections (per user preference;
-  watch 8B's structured-output reliability),
-  `anthropic/claude-opus-4.7` for Phase 5 review-exercise generation.
+  one Keychain entry. Model name is a runtime setting picked by the user
+  in Settings; the UI surfaces a **≥30B params recommended** hint.
+  Default model: `anthropic/claude-haiku-4.5` (fast/routine),
+  `anthropic/claude-opus-4.7` (Phase 5 review exercises).
+  Smaller models (e.g., `ibm-granite/granite-4.1-8b`) can be entered freely
+  but trigger a dismissible warning about structured-output reliability.
   `AnthropicAdapter` and `OpenAIAdapter` files remain as skeletons for
-  future direct-provider integration (BYO key, cost transparency,
-  prompt caching, org compliance). See `docs/llm-providers.md` for details.
+  future direct-provider integration. See `docs/llm-providers.md`.
+- **2026-05-23 — Phase 1 now ships a minimal Settings UI.** Originally
+  Phase 1 was hotkey + notch + correction loop with a Keychain-stored key
+  (no UI to enter it — env var only). Adding a minimal Settings surface so
+  users can paste their OpenRouter key and pick a model from inside the
+  app on first launch. Full Settings polish remains in Phase 7.
+- **2026-05-23 — Dev `.env` convention.** `.env.example` in the repo
+  documents the variable names; users `cp .env.example .env` and fill in
+  values. `.env` is gitignored. API-key resolution order:
+  Keychain → `.env` → `ProcessInfo` env vars.
 
 ## Product shape
 

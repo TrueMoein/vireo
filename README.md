@@ -40,9 +40,15 @@ genuinely have it.
 ```bash
 git clone https://github.com/<you>/vireo
 cd vireo
+cp .env.example .env       # then edit .env and paste your OpenRouter key
 swift package resolve
 swift build
 ```
+
+Get an OpenRouter API key at https://openrouter.ai/keys. Once you launch
+Vireo, you can also paste / change the key from Settings → Provider — the
+`.env` file is only for development convenience; production keys live in
+the macOS Keychain.
 
 For the menubar + notch app to run with the right entitlements (Accessibility,
 hardened runtime, signing), open in Xcode:

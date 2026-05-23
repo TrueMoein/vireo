@@ -17,8 +17,31 @@ Defaults shipped:
 
 | Routing | Default model | Why |
 |---|---|---|
-| Fast (every correction) | `ibm-granite/granite-4.1-8b` | Cheap, fast. Watch reliability of structured output at 8B; easy to swap. |
+| Fast (every correction) | `anthropic/claude-haiku-4.5` | ~70B class, fast, cheap, excellent at structured output, great at grammar nuance. |
 | Quality (review-exercise generation, Phase 5) | `anthropic/claude-opus-4.7` | Rare call, quality matters. |
+
+## The ≥30B recommendation
+
+The Settings model picker accepts any OpenRouter model name, but surfaces a
+warning when the user enters something below ~30B parameters. Why:
+
+- Grammar coaching wants nuance the model can't fake. A 3B / 8B model will
+  often produce technically-correct-but-tone-deaf corrections, miss
+  L1-interference patterns, or hallucinate rules.
+- Structured output (our `CorrectionResult` JSON) is materially less
+  reliable on small models. They'll silently violate enum constraints and
+  drop required fields, forcing retries.
+- The cost difference is small at our usage volume (a few corrections per
+  hour). Claude Haiku 4.5 at $1/M input + $5/M output works out to roughly
+  $0.001 per correction.
+
+Recommended (≥30B) quick-picks shown in Settings:
+- `anthropic/claude-haiku-4.5` (default)
+- `google/gemini-3.1-flash`
+- `openai/gpt-4o-mini`
+- `mistralai/mistral-large`
+
+The warning is dismissible — users can choose anything they want.
 
 Endpoint: `POST https://openrouter.ai/api/v1/chat/completions`
 Auth: `Authorization: Bearer <OPENROUTER_API_KEY>`
