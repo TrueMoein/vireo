@@ -1,20 +1,21 @@
-// VireoApp.swift — @main App entry, owns the MenuBarExtra scene + notch presenter.
+// VireoApp.swift — @main App entry, owns the MenuBarExtra + Settings scenes.
 
 import SwiftUI
 
 @main
 struct VireoApp: App {
+    @StateObject private var settings = SettingsModel()
+
     var body: some Scene {
         MenuBarExtra("Vireo", systemImage: "bird") {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Vireo")
-                    .font(.headline)
-                Text("Coming soon")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding()
+            MenubarPopover()
+                .environmentObject(settings)
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView()
+                .environmentObject(settings)
+        }
     }
 }
