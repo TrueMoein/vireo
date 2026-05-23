@@ -6,6 +6,7 @@
 // since they need to paste back into the original source app.
 
 import AppKit
+import ApplicationServices
 import Foundation
 import OSLog
 
@@ -99,11 +100,54 @@ final class AppCoordinator {
 
     // MARK: - Post-correction actions
 
-    /// Paste `text` back into the original source app, replacing its current
-    /// selection. Only activates the source app if it isn't already
-    /// frontmost (the notch is `.nonactivatingPanel`, so in the normal flow
-    /// focus never left). Simulates ⌘V after a brief settle delay.
+    /// Replace the current selection in the source app with `text`.
+    ///
+    /// Strategy (in order):
+    /// 1. AX write-back: AXUIElementSetAttributeValue on the focused
+    ///    element with kAXSelectedTextAttribute. Direct, instant, no
+    ///    pasteboard hijack, no ⌘V timing fragility. Works in native
+    ///    AX-cooperative text fields (Notes, Mail, TextEdit, Pages, Xcode).
+    /// 2. Pasteboard + ⌘V: classic fallback for apps where AX selectedText
+    ///    is read-only (most Electron / Chromium apps). Activates the
+    ///    source app first if it isn't frontmost.
     func replaceCorrection(_ text: String) {
+        if replaceViaAX(text: text) {
+            log.info("Replace via AX write-back: \(text.count, privacy: .public) chars")
+            return
+        }
+        log.info("Replace: AX write-back unavailable, using pasteboard + ⌘V")
+        replaceViaPasteboard(text: text)
+    }
+
+    /// Try the AX-direct path. Returns true on success.
+    private func replaceViaAX(text: String) -> Bool {
+        let systemWide = AXUIElementCreateSystemWide()
+        var focused: AnyObject?
+        let getStatus = AXUIElementCopyAttributeValue(
+            systemWide,
+            kAXFocusedUIElementAttribute as CFString,
+            &focused
+        )
+        guard getStatus == .success, let focusedRef = focused else {
+            log.info("AX write-back: no focused element (status=\(getStatus.rawValue, privacy: .public))")
+            return false
+        }
+        let element = unsafeDowncast(focusedRef, to: AXUIElement.self)
+        let setStatus = AXUIElementSetAttributeValue(
+            element,
+            kAXSelectedTextAttribute as CFString,
+            text as CFString
+        )
+        if setStatus != .success {
+            log.info("AX write-back: set failed (status=\(setStatus.rawValue, privacy: .public))")
+        }
+        return setStatus == .success
+    }
+
+    /// Pasteboard + ⌘V fallback. Only activates the source app if it isn't
+    /// already frontmost (the notch is `.nonactivatingPanel`, so in the
+    /// normal flow focus never left).
+    private func replaceViaPasteboard(text: String) {
         let pb = NSPasteboard.general
         pb.clearContents()
         let pbOK = pb.setString(text, forType: .string)
@@ -119,19 +163,19 @@ final class AppCoordinator {
         }
 
         log.info("""
-            Replace: chars=\(text.count, privacy: .public) \
+            Replace pasteboard fallback: \
             pbWritten=\(pbOK, privacy: .public) \
             lastSource=\(self.lastSourceApp?.localizedName ?? "nil", privacy: .public) \
-            currentFront=\(currentFrontmost?.localizedName ?? "nil", privacy: .public) \
+            front=\(currentFrontmost?.localizedName ?? "nil", privacy: .public) \
             needsActivation=\(needsActivation, privacy: .public) \
             activated=\(activated, privacy: .public)
             """)
 
-        let settleDelay: Duration = needsActivation ? .milliseconds(180) : .milliseconds(50)
+        let settleDelay: Duration = needsActivation ? .milliseconds(200) : .milliseconds(80)
         Task {
             try? await Task.sleep(for: settleDelay)
             Self.simulateCommandV()
-            log.info("Replace: ⌘V posted")
+            log.info("Replace pasteboard fallback: ⌘V posted")
         }
     }
 

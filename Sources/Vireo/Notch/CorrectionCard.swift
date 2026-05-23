@@ -1,10 +1,8 @@
 // CorrectionCard.swift — what the notch shows when a correction is ready.
 //
-// Phase 1 minimum: corrected sentence in New York serif, mistakes list with
-// strikethrough → fix + category + rule + explanation, and three actions —
-// Replace (paste corrected text back into the source app), Copy, Dismiss.
-// Polish (matched-geometry pill ↔ card morph, signature motion, full Liquid
-// Glass treatment) lands in Phase 3.
+// Uses the DesignSystem tokens (Color.Vireo, Font.Vireo, Animation.Vireo).
+// Layout: serif corrected sentence + per-mistake list with coral/sage
+// diff tokens + Replace / Copy / Dismiss action row.
 
 import SwiftUI
 
@@ -19,9 +17,9 @@ struct CorrectionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+
             Text(result.correctedText)
-                .font(.system(.title3, design: .serif))
-                .fontWeight(.medium)
+                .font(.Vireo.correctedSentence)
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -32,6 +30,7 @@ struct CorrectionCard: View {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(result.mistakes.indices, id: \.self) { i in
                         mistakeRow(result.mistakes[i])
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
             }
@@ -54,11 +53,11 @@ struct CorrectionCard: View {
                 .foregroundStyle(.tint)
                 .imageScale(.medium)
             Text("Correction")
-                .font(.headline)
+                .font(.Vireo.cardHeadline)
             Spacer()
             if !result.mistakes.isEmpty {
                 Text("\(result.mistakes.count) fix\(result.mistakes.count == 1 ? "" : "es")")
-                    .font(.caption2)
+                    .font(.Vireo.categoryChip)
                     .foregroundStyle(.secondary)
             }
         }
@@ -69,24 +68,24 @@ struct CorrectionCard: View {
             HStack(spacing: 6) {
                 Text(m.original)
                     .strikethrough()
-                    .foregroundStyle(Color(red: 0.851, green: 0.467, blue: 0.341)) // coral
+                    .foregroundStyle(Color.Vireo.mistake)
                 Image(systemName: "arrow.right")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Text(m.fixed)
-                    .foregroundStyle(Color(red: 0.482, green: 0.659, blue: 0.537)) // sage
+                    .foregroundStyle(Color.Vireo.correction)
                     .bold()
             }
-            .font(.system(.callout, design: .monospaced))
+            .font(.Vireo.mistakeMono)
             .textSelection(.enabled)
 
             Text(m.category.rawValue + " · " + m.rule)
-                .font(.caption2)
+                .font(.Vireo.categoryChip)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
 
             Text(m.explanation)
-                .font(.caption)
+                .font(.Vireo.detail)
                 .foregroundStyle(.primary.opacity(0.85))
         }
     }
@@ -98,23 +97,22 @@ struct CorrectionCard: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color(red: 0.482, green: 0.659, blue: 0.537)) // sage
+            .tint(Color.Vireo.correction)
             .controlSize(.regular)
 
             Button(action: handleCopy) {
-                if copyConfirmation {
-                    Label("Copied", systemImage: "checkmark")
-                        .frame(maxWidth: .infinity)
-                        .transition(.opacity)
-                } else {
-                    Label("Copy", systemImage: "doc.on.doc")
-                        .frame(maxWidth: .infinity)
-                        .transition(.opacity)
+                Group {
+                    if copyConfirmation {
+                        Label("Copied", systemImage: "checkmark")
+                    } else {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }
                 }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .controlSize(.regular)
-            .animation(.smooth(duration: 0.2), value: copyConfirmation)
+            .animation(.Vireo.microInteraction, value: copyConfirmation)
 
             Button(action: onDismiss) {
                 Image(systemName: "xmark")

@@ -1,15 +1,30 @@
-// Motion.swift — animation presets.
+// Motion.swift — Vireo animation tokens.
 //
-// Entry:           .smooth(duration: 0.35, extraBounce: 0.15)
-// Dismiss:         .snappy(duration: 0.20)
-// Notch expand:    .spring(response: 0.50, dampingFraction: 0.70)
-// Notch collapse:  .spring(response: 0.35, dampingFraction: 0.85)
-// Stagger:         delay(Double(i) * 0.04), capped at 5 items
-// Signature trans: .blurReplace.combined(with: .scale(0.97))
-//
-// Never .easeInOut.
-// Never simultaneous opacity + scale on content — pick scale (0.92 → 1.0).
-//
-// TODO: define in Phase 3.
+// Per docs/design-system.md. Never .easeInOut (reads dated).
 
 import SwiftUI
+
+extension Animation {
+    enum Vireo {
+        /// Default entry animation (content appearing).
+        static let entry = Animation.smooth(duration: 0.35, extraBounce: 0.15)
+
+        /// Default dismiss animation.
+        static let dismiss = Animation.snappy(duration: 0.20)
+
+        /// Notch expand spring.
+        static let notchExpand = Animation.spring(response: 0.50, dampingFraction: 0.70)
+
+        /// Notch collapse spring.
+        static let notchCollapse = Animation.spring(response: 0.35, dampingFraction: 0.85)
+
+        /// Microinteraction (hover, focus, press feedback).
+        static let microInteraction = Animation.smooth(duration: 0.18)
+
+        /// Stagger delay between sequential items, capped at 5.
+        static func staggered(index i: Int) -> Animation {
+            .smooth(duration: 0.30, extraBounce: 0.12)
+                .delay(Double(min(i, 5)) * 0.04)
+        }
+    }
+}
