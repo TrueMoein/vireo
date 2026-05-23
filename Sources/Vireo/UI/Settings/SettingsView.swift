@@ -1,12 +1,8 @@
 // SettingsView.swift — Vireo settings.
 //
-// Phase 1 minimal: Provider section (API key + model picker). Full polish
-// (capture toggles, behavior, privacy, diagnostics, about) lands in Phase 7.
-//
-// Model picker UX:
-//   - Free-text field accepting any OpenRouter model id
-//   - "Recommended (≥30B params)" quick-picks
-//   - Dismissible warning when a known sub-30B model is entered
+// Phase 1 minimal: Provider section (API key + model picker + test
+// connection). Full polish (capture toggles, behavior, privacy,
+// diagnostics, about) lands in Phase 7.
 
 import SwiftUI
 
@@ -34,12 +30,16 @@ struct SettingsView: View {
         Self.knownSubThirtyB.contains(settings.model.lowercased())
     }
 
+    private var isRunning: Bool {
+        if case .running = settings.testResult { return true }
+        return false
+    }
+
     var body: some View {
         Form {
             Section("OpenRouter") {
                 SecureField("API key", text: $settings.apiKey, prompt: Text("sk-or-v1-…"))
                     .textContentType(.password)
-
                 HStack(spacing: 4) {
                     Text("Get a key at")
                     Link("openrouter.ai/keys", destination: URL(string: "https://openrouter.ai/keys")!)
@@ -63,7 +63,6 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
-
                     ForEach(Self.recommendedModels, id: \.self) { name in
                         Button {
                             settings.model = name
@@ -85,7 +84,7 @@ struct SettingsView: View {
             }
 
             Section {
-                HStack {
+                HStack(spacing: 12) {
                     Button("Save") {
                         settings.save()
                         saveConfirmation = "Saved"
@@ -95,6 +94,11 @@ struct SettingsView: View {
                         }
                     }
                     .keyboardShortcut(.return, modifiers: .command)
+
+                    Button(isRunning ? "Testing…" : "Test connection") {
+                        Task { await settings.testConnection() }
+                    }
+                    .disabled(!settings.hasAPIKey || isRunning)
 
                     if let confirmation = saveConfirmation {
                         Label(confirmation, systemImage: "checkmark.circle.fill")
@@ -106,8 +110,90 @@ struct SettingsView: View {
                     Spacer()
                 }
             }
+
+            Section("Test result") {
+                testResultView
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: 520)
+        .frame(width: 540, height: 680)
+    }
+
+    @ViewBuilder
+    private var testResultView: some View {
+        switch settings.testResult {
+        case .idle:
+            Text("Click \u{201C}Test connection\u{201D} to send a sample sentence through your configured model and see the structured correction.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .running:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Asking \(settings.model)…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .success(let result):
+            VStack(alignment: .leading, spacing: 10) {
+                labeledRow("Original", SettingsModel.testSentence)
+                labeledRow("Corrected", result.correctedText, accent: .green)
+                if !result.mistakes.isEmpty {
+                    Divider()
+                    Text("Mistakes (\(result.mistakes.count))")
+                        .font(.caption.bold())
+                    ForEach(result.mistakes.indices, id: \.self) { i in
+                        mistakeRow(result.mistakes[i])
+                    }
+                } else {
+                    Text("No mistakes returned. (The model thinks the sample is fine — try a longer or messier sample to verify.)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        case .failure(let msg):
+            Label(msg, systemImage: "exclamationmark.octagon.fill")
+                .foregroundStyle(.red)
+                .font(.caption)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func labeledRow(_ label: String, _ text: String, accent: Color? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(accent ?? .primary)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func mistakeRow(_ m: CorrectionResult.Mistake) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(m.original)
+                    .strikethrough()
+                    .foregroundStyle(.red)
+                Image(systemName: "arrow.right")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(m.fixed)
+                    .foregroundStyle(.green)
+                    .bold()
+            }
+            .font(.system(.callout, design: .monospaced))
+            .textSelection(.enabled)
+
+            Text("\(m.category.rawValue) · \(m.rule)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Text(m.explanation)
+                .font(.caption)
+                .foregroundStyle(.primary.opacity(0.85))
+        }
+        .padding(.vertical, 4)
     }
 }
