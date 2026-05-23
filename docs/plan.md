@@ -15,6 +15,19 @@ model; recurring weaknesses become 5-minute spaced-repetition drills generated
 from your own sentences. Open source from day one. Aimed to ship a daily-driver
 app that looks and feels better than Raycast or the ChatGPT Mac app.
 
+## Amendments to the approved plan
+
+- **2026-05-23 — LLM provider strategy switched to OpenRouter.** Instead of
+  shipping two adapters (Anthropic + OpenAI) at v0.1, a single
+  `OpenRouterAdapter` covers ~100 models via one OpenAI-compatible API and
+  one Keychain entry. Model name becomes a runtime setting. Defaults:
+  `ibm-granite/granite-4.1-8b` for routine corrections (per user preference;
+  watch 8B's structured-output reliability),
+  `anthropic/claude-opus-4.7` for Phase 5 review-exercise generation.
+  `AnthropicAdapter` and `OpenAIAdapter` files remain as skeletons for
+  future direct-provider integration (BYO key, cost transparency,
+  prompt caching, org compliance). See `docs/llm-providers.md` for details.
+
 ## Product shape
 
 **Three capture surfaces, ranked by friction**
