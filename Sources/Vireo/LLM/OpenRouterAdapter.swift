@@ -48,9 +48,17 @@ struct OpenRouterAdapter: ProviderAdapter {
         }
 
         let chat = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
-        guard let raw = chat.choices.first?.message.content,
-              let contentData = raw.data(using: .utf8)
-        else { throw AdapterError.emptyResponse }
+        guard let raw = chat.choices.first?.message.content else {
+            throw AdapterError.emptyResponse
+        }
+
+        // Defensive normalization: some models wrap JSON in Markdown fences
+        // or add prose like "Here's the correction:" despite the system
+        // prompt saying otherwise. Strip both before decoding.
+        let normalized = Self.normalizeJSONContent(raw)
+        guard let contentData = normalized.data(using: .utf8) else {
+            throw AdapterError.decodeFailure("Empty content after normalization", raw)
+        }
 
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -59,6 +67,36 @@ struct OpenRouterAdapter: ProviderAdapter {
         } catch {
             throw AdapterError.decodeFailure(error.localizedDescription, raw)
         }
+    }
+
+    /// Strip Markdown code fences and any prose around the outer JSON object.
+    /// Handles ```json\n{…}\n```, ```\n{…}\n```, and "Here's the JSON: {…}".
+    static func normalizeJSONContent(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Strip leading code-fence opener
+        if s.hasPrefix("```") {
+            s = String(s.dropFirst(3))
+            // Skip the optional language tag up to the first newline
+            if let nl = s.range(of: "\n") {
+                s = String(s[nl.upperBound...])
+            }
+        }
+        // Strip trailing code-fence closer
+        if s.hasSuffix("```") {
+            s = String(s.dropLast(3))
+        }
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Snip to the outermost JSON object if there's prose before/after.
+        if let first = s.firstIndex(of: "{"),
+           let last = s.lastIndex(of: "}"),
+           first <= last
+        {
+            s = String(s[first...last])
+        }
+
+        return s
     }
 
     private struct ChatCompletionResponse: Codable {
