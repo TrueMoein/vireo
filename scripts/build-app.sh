@@ -13,15 +13,16 @@
 #   bash scripts/build-app.sh release      # release build
 #   open Vireo.app                         # run it
 #
-# Re-grant note: ad-hoc signing (used here when no "Vireo Dev" code-signing
-# identity is in Keychain) produces a different signature on each build,
-# which can still invalidate AX trust on rebuild. To get sticky trust:
-#   1. Open Keychain Access → Keychain Access menu → Certificate Assistant
-#      → Create a Certificate
-#   2. Name: "Vireo Dev"  ·  Identity Type: Self Signed Root
-#      Certificate Type: Code Signing
-#   3. After it appears in Keychain, re-run this script — it'll auto-pick
-#      the "Vireo Dev" identity and the signature stays stable across builds.
+# Re-grant note: on modern macOS, ad-hoc and self-signed signatures both
+# invalidate Accessibility trust whenever the binary's content changes
+# (TCC trusts by team identifier, which only exists in real Developer ID
+# signatures). That means **every source change requires re-granting AX**.
+# Workflows that minimize re-granting:
+#   • Don't rebuild between testing sessions if you can avoid it.
+#   • A bit-identical rebuild (no source change) produces an identical
+#     ad-hoc signature, so trust holds.
+#   • For permanent sticky trust, ship with a real Apple Developer ID
+#     ($99/yr) — that's Phase 7.
 
 set -euo pipefail
 
@@ -99,16 +100,12 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Prefer a stable self-signed identity if the user created one; fall back
-# to ad-hoc which works but invalidates trust on each rebuild.
-if security find-identity -v -p codesigning 2>/dev/null | grep -q '"Vireo Dev"'; then
-    SIGN_IDENTITY="Vireo Dev"
-    echo "→ Signing with \"Vireo Dev\" identity (trust persists across builds)"
-else
-    SIGN_IDENTITY="-"
-    echo "→ Ad-hoc signing (trust may need re-granting after rebuild — see top of script)"
-fi
-codesign --force --deep --sign "$SIGN_IDENTITY" "$APP_BUNDLE" 2>&1 | sed 's/^/   /' || true
+# Ad-hoc sign with a stable identifier. The identifier is stable across
+# builds (always "co.vireo") even though the content hash isn't, so at least
+# the bundle identity reads consistently in Console and System Settings.
+codesign --force --deep --sign - \
+    --identifier "co.vireo" \
+    "$APP_BUNDLE" 2>&1 | sed 's/^/   /' || true
 
 echo ""
 echo "✓ ${APP_BUNDLE}"
