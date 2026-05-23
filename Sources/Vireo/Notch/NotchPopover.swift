@@ -76,40 +76,48 @@ struct NotchPopover: View {
 
     private var actionsList: some View {
         VStack(spacing: 4) {
-            popoverAction(systemImage: "gear", label: "Settings", shortcut: "⌘,") {
-                Task { await presenter.dismissToIdle() }
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            // macOS 14+ wants SettingsLink for opening the Settings scene —
+            // the old NSApp.sendAction(showSettingsWindow:) is deprecated and
+            // emits a runtime warning. SettingsLink also handles activation
+            // and window ordering automatically.
+            SettingsLink {
+                popoverRowLabel(systemImage: "gear", label: "Settings", shortcut: "⌘,")
             }
-            popoverAction(systemImage: "power", label: "Quit Vireo", shortcut: "⌘Q") {
+            .buttonStyle(NotchActionButtonStyle())
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    Task { await presenter.dismissToIdle() }
+                }
+            )
+
+            Button {
                 NSApp.terminate(nil)
+            } label: {
+                popoverRowLabel(systemImage: "power", label: "Quit Vireo", shortcut: "⌘Q")
             }
+            .buttonStyle(NotchActionButtonStyle())
         }
     }
 
-    private func popoverAction(
+    private func popoverRowLabel(
         systemImage: String,
         label: String,
-        shortcut: String,
-        action: @escaping () -> Void
+        shortcut: String
     ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: systemImage)
-                    .frame(width: 18)
-                    .foregroundStyle(.secondary)
-                Text(label)
-                    .foregroundStyle(.primary)
-                Spacer()
-                Text(shortcut)
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-            }
-            .contentShape(Rectangle())
-            .padding(.vertical, 6)
-            .padding(.horizontal, 8)
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .frame(width: 18)
+                .foregroundStyle(.secondary)
+            Text(label)
+                .foregroundStyle(.primary)
+            Spacer()
+            Text(shortcut)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.tertiary)
         }
-        .buttonStyle(NotchActionButtonStyle())
+        .contentShape(Rectangle())
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
     }
 }
 
