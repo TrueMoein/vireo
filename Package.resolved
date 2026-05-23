@@ -1,0 +1,51 @@
+{
+  "originHash" : "dffd95c4b3252d9b24fcc7a2762a6b785b07468b00a4cdfcae28ae8c462b8239",
+  "pins" : [
+    {
+      "identity" : "dynamicnotchkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/MrKai77/DynamicNotchKit",
+      "state" : {
+        "revision" : "cd0b3e52d537db115ad3a9d89601f20e0bee8d27",
+        "version" : "1.1.0"
+      }
+    },
+    {
+      "identity" : "grdb.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/groue/GRDB.swift",
+      "state" : {
+        "revision" : "36e30a6f1ef10e4194f6af0cff90888526f0c115",
+        "version" : "7.10.0"
+      }
+    },
+    {
+      "identity" : "keyboardshortcuts",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sindresorhus/KeyboardShortcuts",
+      "state" : {
+        "revision" : "ac12762853126cf2e7ad63a6a58e1c9f58c6a0ee",
+        "version" : "1.17.0"
+      }
+    },
+    {
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle",
+      "state" : {
+        "revision" : "6276ba2b404829d139c45ff98427cf90e2efc59b",
+        "version" : "2.9.2"
+      }
+    },
+    {
+      "identity" : "swift-fsrs",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/open-spaced-repetition/swift-fsrs",
+      "state" : {
+        "revision" : "129e4dc4e99625ee2dd2ee627fab866f2993e3d7",
+        "version" : "5.0.0"
+      }
+    }
+  ],
+  "version" : 3
+}

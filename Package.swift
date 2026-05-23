@@ -21,9 +21,11 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/MrKai77/DynamicNotchKit", from: "1.0.0"),
-        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "2.0.0"),
-        .package(url: "https://github.com/groue/GRDB.swift", from: "6.0.0"),
-        .package(url: "https://github.com/open-spaced-repetition/swift-fsrs", from: "1.0.0"),
+        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "1.10.0"),
+        .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
+        // swift-fsrs tags FSRS algorithm versions, not semver. v5.0.0 is current
+        // (FSRS-5). When they publish a v6.x.x for FSRS-6, bump this `from:`.
+        .package(url: "https://github.com/open-spaced-repetition/swift-fsrs", from: "5.0.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.0.0"),
     ],
     targets: [
