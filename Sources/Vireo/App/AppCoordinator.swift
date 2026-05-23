@@ -7,6 +7,9 @@
 
 import AppKit
 import Foundation
+import OSLog
+
+private let log = Logger(subsystem: "co.vireo", category: "Coordinator")
 
 @MainActor
 final class AppCoordinator {
@@ -97,18 +100,38 @@ final class AppCoordinator {
     // MARK: - Post-correction actions
 
     /// Paste `text` back into the original source app, replacing its current
-    /// selection. Activates the app first, then simulates ⌘V after a short
-    /// delay so focus has settled.
+    /// selection. Only activates the source app if it isn't already
+    /// frontmost (the notch is `.nonactivatingPanel`, so in the normal flow
+    /// focus never left). Simulates ⌘V after a brief settle delay.
     func replaceCorrection(_ text: String) {
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.setString(text, forType: .string)
+        let pbOK = pb.setString(text, forType: .string)
 
-        lastSourceApp?.activate()
+        let currentFrontmost = NSWorkspace.shared.frontmostApplication
+        let needsActivation = lastSourceApp != nil
+            && lastSourceApp?.processIdentifier != currentFrontmost?.processIdentifier
+        let activated: Bool
+        if needsActivation, let app = lastSourceApp {
+            activated = app.activate()
+        } else {
+            activated = false
+        }
 
+        log.info("""
+            Replace: chars=\(text.count, privacy: .public) \
+            pbWritten=\(pbOK, privacy: .public) \
+            lastSource=\(self.lastSourceApp?.localizedName ?? "nil", privacy: .public) \
+            currentFront=\(currentFrontmost?.localizedName ?? "nil", privacy: .public) \
+            needsActivation=\(needsActivation, privacy: .public) \
+            activated=\(activated, privacy: .public)
+            """)
+
+        let settleDelay: Duration = needsActivation ? .milliseconds(180) : .milliseconds(50)
         Task {
-            try? await Task.sleep(for: .milliseconds(120))
+            try? await Task.sleep(for: settleDelay)
             Self.simulateCommandV()
+            log.info("Replace: ⌘V posted")
         }
     }
 
@@ -120,12 +143,18 @@ final class AppCoordinator {
     }
 
     private static func simulateCommandV() {
-        guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
+        guard let source = CGEventSource(stateID: .combinedSessionState) else {
+            log.error("simulateCommandV: CGEventSource creation failed")
+            return
+        }
         let vKey: CGKeyCode = 0x09 // ANSI V
         guard
             let down = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
             let up = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false)
-        else { return }
+        else {
+            log.error("simulateCommandV: CGEvent creation failed")
+            return
+        }
         down.flags = .maskCommand
         up.flags = .maskCommand
         down.post(tap: .cghidEventTap)
