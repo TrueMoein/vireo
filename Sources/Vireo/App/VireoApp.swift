@@ -14,6 +14,7 @@ struct VireoApp: App {
                 .environmentObject(appDelegate.settings)
                 .environmentObject(appDelegate.notchPresenter)
                 .environmentObject(appDelegate.permission)
+                .environmentObject(appDelegate.hoverButton)
         }
     }
 }

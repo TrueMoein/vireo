@@ -12,6 +12,7 @@ struct SettingsView: View {
     @EnvironmentObject var settings: SettingsModel
     @EnvironmentObject var notchPresenter: NotchPresenter
     @EnvironmentObject var permission: AccessibilityPermission
+    @EnvironmentObject var hoverButton: HoverButtonController
     @State private var saveConfirmation: String?
 
     private static let recommendedModels = [
@@ -44,13 +45,31 @@ struct SettingsView: View {
             providerSection
             modelSection
             hotkeySection
+            captureSection
             permissionsSection
             actionsSection
             testResultSection
         }
         .formStyle(.grouped)
-        .frame(width: 540, height: 760)
+        .frame(width: 540, height: 820)
         .onAppear { permission.refresh() }
+    }
+
+    private var captureSection: some View {
+        Section("Capture") {
+            Toggle(isOn: Binding(
+                get: { hoverButton.isEnabled },
+                set: { hoverButton.setEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Show floating button on text selection")
+                    Text("When you select text in any app, a small Vireo bird appears next to your cursor — click it instead of using the hotkey.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 
     // MARK: - Sections

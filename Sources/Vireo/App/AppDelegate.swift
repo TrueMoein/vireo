@@ -1,5 +1,5 @@
 // AppDelegate.swift — owns model lifetimes, starts the notch widget, and
-// registers the global hotkey.
+// registers the global hotkey + the PopClip-style hover button controller.
 
 import AppKit
 import KeyboardShortcuts
@@ -11,15 +11,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let notchPresenter: NotchPresenter
     let coordinator: AppCoordinator
     let permission: AccessibilityPermission
+    let focusObserver: FocusObserver
+    let hoverButton: HoverButtonController
 
     override init() {
         let settings = SettingsModel()
         let presenter = NotchPresenter(settings: settings)
         let coordinator = AppCoordinator(settings: settings, notch: presenter)
+        let focusObserver = FocusObserver()
+        let hoverButton = HoverButtonController(coordinator: coordinator, focus: focusObserver)
+
         self.settings = settings
         self.notchPresenter = presenter
         self.coordinator = coordinator
         self.permission = AccessibilityPermission()
+        self.focusObserver = focusObserver
+        self.hoverButton = hoverButton
         super.init()
         // Break the retain cycle: coordinator strongly holds presenter via
         // its notch field; presenter holds coordinator weakly for action
