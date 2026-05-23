@@ -1,9 +1,12 @@
-// OpenAIAdapter.swift — OpenAI chat-completions with strict structured output.
+// OpenAIAdapter.swift — direct OpenAI API integration (future option).
 //
-// response_format: { type: "json_schema", strict: true, json_schema: ... }
-// Token-level constrained on gpt-4o-2024-08-06+. Decode straight into
-// CorrectionResult. Bounded retry on DecodingError with re-prompt.
+// Vireo's primary adapter is OpenRouterAdapter, which can already route to
+// OpenAI models. This direct adapter is a future option for users who want
+// their own OpenAI API key without OpenRouter as middleware.
 //
-// TODO: implement in Phase 4.
+// Would use chat completions with strict structured output:
+//   response_format: { type: "json_schema", strict: true, json_schema: ... }
+//
+// TODO: not in Phase 1 scope.
 
 import Foundation

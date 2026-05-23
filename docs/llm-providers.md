@@ -5,6 +5,30 @@ text + the standard correction prompt to its provider, requests a
 schema-conformant structured response, and decodes into the same
 `CorrectionResult` Codable.
 
+## v0.1: OpenRouter as the single adapter
+
+Vireo ships with **`OpenRouterAdapter`** as the only enabled adapter.
+[OpenRouter](https://openrouter.ai) is an OpenAI-compatible aggregator that
+gives access to ~100 models behind one API key. This means: one Keychain
+entry, one auth flow, one HTTP client — and the user picks any model at
+runtime from Settings.
+
+Defaults shipped:
+
+| Routing | Default model | Why |
+|---|---|---|
+| Fast (every correction) | `ibm-granite/granite-4.1-8b` | Cheap, fast. Watch reliability of structured output at 8B; easy to swap. |
+| Quality (review-exercise generation, Phase 5) | `anthropic/claude-opus-4.7` | Rare call, quality matters. |
+
+Endpoint: `POST https://openrouter.ai/api/v1/chat/completions`
+Auth: `Authorization: Bearer <OPENROUTER_API_KEY>`
+
+## Direct-provider adapters (future)
+
+`AnthropicAdapter.swift` and `OpenAIAdapter.swift` are placeholder skeletons
+for users who want their own per-provider key (cost transparency,
+prompt-caching support, org compliance). Not in v0.1 scope.
+
 ## The schema
 
 Author once, enforce twice. Written to OpenAI's stricter JSON-schema subset
@@ -56,19 +80,42 @@ Author once, enforce twice. Written to OpenAI's stricter JSON-schema subset
 
 ## Enforcement modes
 
-**Anthropic** — define a single tool named `return_correction` with
-`input_schema` set to the above. `tool_choice: { type: "tool", name:
-"return_correction" }` forces the model to fill it. Schema is enforced
-server-side.
+Through OpenRouter we have two enforcement options depending on the target
+model:
 
-**OpenAI** — set `response_format: { type: "json_schema", json_schema: {
-name: "correction", strict: true, schema: <above> } }`. Token-level
-constrained on `gpt-4o-2024-08-06` and later.
+**Strict JSON Schema** — for models that support it (OpenAI 4o+, Google
+Gemini, and a few others):
 
-For both, a bounded retry on `DecodingError` re-prompts with the validation
-error message before surfacing a clean failure. No silent fallback.
+```
+response_format: {
+  type: "json_schema",
+  json_schema: { name: "correction", strict: true, schema: <above> }
+}
+```
+
+Token-level constrained. Schema violations are impossible.
+
+**Loose JSON mode** — for models that don't (Granite 4.1 8B falls here as
+of 2026-05; verify per-model):
+
+```
+response_format: { type: "json_object" }
+```
+
+The model returns valid JSON but we have to validate against our schema
+on the client side. A bounded retry on `DecodingError` re-prompts with the
+validation error message before surfacing a clean failure. No silent
+fallback.
+
+`ProviderManager.modelCapabilities` is the table of which model gets which
+treatment.
 
 ## Adding a provider
+
+In v0.1 most "adding a provider" needs are satisfied by picking a different
+OpenRouter model in Settings — no code change required.
+
+When a true direct adapter is justified (cost, caching, compliance):
 
 1. Create `Sources/Vireo/LLM/<Name>Adapter.swift`.
 2. Conform to `ProviderAdapter`: `func correct(_ text: String) async throws -> CorrectionResult`.
