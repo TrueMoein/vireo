@@ -16,6 +16,9 @@ import SwiftUI
 final class NotchPresenter: ObservableObject {
     let model = NotchModel()
     let settings: SettingsModel
+    /// Wired by AppDelegate after both objects exist (they hold weak ↔ strong
+    /// references). Used by CorrectionCard's action buttons.
+    weak var coordinator: AppCoordinator?
 
     static let hoverEnterDelay: Duration = .milliseconds(150)
     static let hoverLeaveDelay: Duration = .milliseconds(200)

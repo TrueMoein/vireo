@@ -15,11 +15,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     override init() {
         let settings = SettingsModel()
         let presenter = NotchPresenter(settings: settings)
+        let coordinator = AppCoordinator(settings: settings, notch: presenter)
         self.settings = settings
         self.notchPresenter = presenter
-        self.coordinator = AppCoordinator(settings: settings, notch: presenter)
+        self.coordinator = coordinator
         self.permission = AccessibilityPermission()
         super.init()
+        // Break the retain cycle: coordinator strongly holds presenter via
+        // its notch field; presenter holds coordinator weakly for action
+        // dispatch from CorrectionCard buttons.
+        presenter.coordinator = coordinator
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

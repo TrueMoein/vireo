@@ -16,8 +16,20 @@ struct ExpandedRouter: View {
                 NotchPopover(settings: presenter.settings, presenter: presenter)
                     .transition(.blurReplace.combined(with: .scale(0.96)))
             case .correction(let result):
-                CorrectionCard(result: result)
-                    .transition(.blurReplace.combined(with: .scale(0.96)))
+                CorrectionCard(
+                    result: result,
+                    onReplace: { [weak presenter] in
+                        presenter?.coordinator?.replaceCorrection(result.correctedText)
+                        Task { @MainActor in await presenter?.dismissToIdle() }
+                    },
+                    onCopy: { [weak presenter] in
+                        presenter?.coordinator?.copyCorrection(result.correctedText)
+                    },
+                    onDismiss: { [weak presenter] in
+                        Task { @MainActor in await presenter?.dismissToIdle() }
+                    }
+                )
+                .transition(.blurReplace.combined(with: .scale(0.96)))
             case .busy(let label):
                 BusyCard(label: label)
                     .transition(.blurReplace.combined(with: .scale(0.96)))

@@ -2,8 +2,10 @@
 //
 // Every capture surface (hotkey, double-shift, hover button, clipboard
 // monitor) lands here. Owns the pipeline: resolve text → call provider →
-// show in notch.
+// show in notch. Also owns the post-correction actions (Replace, Copy)
+// since they need to paste back into the original source app.
 
+import AppKit
 import Foundation
 
 @MainActor
@@ -12,16 +14,20 @@ final class AppCoordinator {
     let notch: NotchPresenter
 
     private let resolver = SelectedTextResolver()
+    private var lastSourceApp: NSRunningApplication?
 
     init(settings: SettingsModel, notch: NotchPresenter) {
         self.settings = settings
         self.notch = notch
     }
 
-    /// Invoked by the global hotkey. Resolves selected text and routes it
-    /// through the configured OpenRouter model. Surfaces busy/error/success
-    /// states in the notch.
+    // MARK: - Correct selection
+
     func correctSelection() async {
+        // Capture the source app *before* we present our own UI so Replace
+        // can route the paste back to it later.
+        lastSourceApp = NSWorkspace.shared.frontmostApplication
+
         let trimmedKey = settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else {
             await notch.showMessage(
@@ -41,7 +47,6 @@ final class AppCoordinator {
             return
         }
 
-        // Resolve selected text.
         let text: String
         do {
             text = try await resolver.resolve()
@@ -71,10 +76,8 @@ final class AppCoordinator {
             return
         }
 
-        // Show busy while the call is in flight.
         await notch.showBusy("Asking \(trimmedModel)")
 
-        // Call the model.
         let adapter = OpenRouterAdapter(apiKey: trimmedKey, model: trimmedModel)
         do {
             let result = try await adapter.correct(text)
@@ -89,5 +92,43 @@ final class AppCoordinator {
                 )
             )
         }
+    }
+
+    // MARK: - Post-correction actions
+
+    /// Paste `text` back into the original source app, replacing its current
+    /// selection. Activates the app first, then simulates ⌘V after a short
+    /// delay so focus has settled.
+    func replaceCorrection(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+
+        lastSourceApp?.activate()
+
+        Task {
+            try? await Task.sleep(for: .milliseconds(120))
+            Self.simulateCommandV()
+        }
+    }
+
+    /// Copy `text` to the clipboard without touching the source app.
+    func copyCorrection(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+    }
+
+    private static func simulateCommandV() {
+        guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
+        let vKey: CGKeyCode = 0x09 // ANSI V
+        guard
+            let down = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
+            let up = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false)
+        else { return }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
     }
 }
