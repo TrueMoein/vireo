@@ -1,25 +1,18 @@
-// VireoApp.swift — @main App entry, owns the MenuBarExtra + Settings scenes
-// and the shared NotchPresenter.
+// VireoApp.swift — @main App entry. The notch widget is the primary surface
+// (owned by AppDelegate); the only SwiftUI Scene is the Settings window,
+// reachable from the notch popover.
 
 import SwiftUI
 
 @main
 struct VireoApp: App {
-    @StateObject private var settings = SettingsModel()
-    @StateObject private var notchPresenter = NotchPresenter()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra("Vireo", systemImage: "bird") {
-            MenubarPopover()
-                .environmentObject(settings)
-                .environmentObject(notchPresenter)
-        }
-        .menuBarExtraStyle(.window)
-
         Settings {
             SettingsView()
-                .environmentObject(settings)
-                .environmentObject(notchPresenter)
+                .environmentObject(appDelegate.settings)
+                .environmentObject(appDelegate.notchPresenter)
         }
     }
 }

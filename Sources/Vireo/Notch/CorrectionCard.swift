@@ -1,31 +1,18 @@
 // CorrectionCard.swift — what the notch shows when a correction is ready.
 //
-// Phase 1 minimum: corrected sentence in serif, mistakes list with
-// strikethrough → fix + category + rule + explanation. Polish (glass effect,
-// matched-geometry pill ↔ card morph, blur-replace transitions, signature
-// motion) lands in Phase 3 along with the design system.
+// Phase 1 minimum: corrected sentence in New York serif, mistakes list with
+// strikethrough → fix + category + rule + explanation. Polish (matched-
+// geometry pill ↔ card morph, signature motion, full Liquid Glass treatment)
+// lands in Phase 3 with the design system.
 
 import SwiftUI
 
 struct CorrectionCard: View {
-    @ObservedObject var model: NotchModel
+    let result: CorrectionResult
 
     var body: some View {
-        Group {
-            if let result = model.currentResult {
-                content(for: result)
-                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
-            } else {
-                EmptyView()
-            }
-        }
-        .animation(.smooth(duration: 0.35), value: model.currentResult?.correctedText)
-    }
-
-    private func content(for result: CorrectionResult) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             header
-
             Text(result.correctedText)
                 .font(.system(.title3, design: .serif))
                 .fontWeight(.medium)
@@ -43,10 +30,10 @@ struct CorrectionCard: View {
             }
         }
         .padding(20)
-        .frame(width: 520, alignment: .leading)
+        .frame(width: 540, alignment: .leading)
         .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.15), radius: 24, x: 0, y: 12)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: .black.opacity(0.18), radius: 24, x: 0, y: 12)
         .padding(.horizontal, 8)
         .padding(.top, 4)
     }

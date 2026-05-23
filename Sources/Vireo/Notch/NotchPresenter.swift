@@ -1,70 +1,109 @@
-// NotchPresenter.swift — wraps DynamicNotchKit. Exposes show(_:)/hide() to
-// the rest of the app. State machine for Phase 1: hidden → expandedCard →
-// hidden after auto-hide timeout. Compact-pill mode + manual pin land in
-// Phase 3 when we have time for the morph polish.
+// NotchPresenter.swift — owns the persistent DynamicNotch and drives its
+// state machine.
+//
+// Resting: compact mode with CompactBirdIcon in the trailing slot.
+// Hover enter (after ~150 ms): expand into NotchPopover.
+// Hover leave (after ~200 ms): collapse back to compact.
+// Correction arrives: expand into CorrectionCard, auto-dismiss after 12 s.
+// Hover does not disturb a correction display.
 
 import AppKit
+import Combine
 import DynamicNotchKit
 import SwiftUI
 
 @MainActor
 final class NotchPresenter: ObservableObject {
-    /// Source of truth for what's currently shown in the notch. CorrectionCard
-    /// observes this via @ObservedObject.
     let model = NotchModel()
+    let settings: SettingsModel
 
-    /// Auto-hide expanded notch after this long. Phase 3 will introduce a
-    /// pill state at ~4s and full hide at ~12s; for now we keep it simple.
-    static let autoHideAfter: Duration = .seconds(12)
+    static let hoverEnterDelay: Duration = .milliseconds(150)
+    static let hoverLeaveDelay: Duration = .milliseconds(200)
+    static let correctionAutoHideAfter: Duration = .seconds(12)
 
-    private var notch: DynamicNotch<CorrectionCard, EmptyView, EmptyView>?
-    private var autoHideTask: Task<Void, Never>?
+    private var notch: DynamicNotch<ExpandedRouter, EmptyView, CompactBirdIcon>?
+    private var hoverObserver: AnyCancellable?
+    private var correctionHideTask: Task<Void, Never>?
 
-    /// Show a correction. Creates the underlying DynamicNotch lazily on
-    /// first call so we capture `model` after init.
-    func show(_ result: CorrectionResult) async {
-        model.currentResult = result
-        autoHideTask?.cancel()
+    init(settings: SettingsModel) {
+        self.settings = settings
+    }
 
-        if notch == nil {
-            let capturedModel = model
-            notch = DynamicNotch {
-                CorrectionCard(model: capturedModel)
-            }
+    /// Bring up the persistent compact widget. Idempotent.
+    func start() {
+        guard notch == nil else { return }
+
+        let model = self.model
+        let presenter = self
+
+        notch = DynamicNotch(
+            hoverBehavior: .all,
+            style: .auto,
+            expanded: { ExpandedRouter(model: model, presenter: presenter) },
+            compactLeading: { EmptyView() },
+            compactTrailing: { CompactBirdIcon() }
+        )
+
+        // Reach compact state on the preferred screen as soon as the run loop
+        // tick gives us NSScreen.screens populated.
+        Task { [weak self] in
+            await self?.notch?.compact(on: Self.preferredScreen)
         }
 
+        hoverObserver = notch?.$isHovering
+            .removeDuplicates()
+            .sink { [weak self] hovering in
+                Task { @MainActor in
+                    await self?.handleHover(hovering)
+                }
+            }
+    }
+
+    /// Push a correction into the notch. Expands into CorrectionCard, then
+    /// auto-dismisses back to .idle after the timeout.
+    func showCorrection(_ result: CorrectionResult) async {
+        correctionHideTask?.cancel()
+        if notch == nil { start() }
+        model.display = .correction(result)
         await notch?.expand(on: Self.preferredScreen)
 
-        autoHideTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.autoHideAfter)
+        correctionHideTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.correctionAutoHideAfter)
             guard !Task.isCancelled, let self else { return }
-            await self.hide()
+            await self.dismissToIdle()
         }
     }
 
-    func hide() async {
-        autoHideTask?.cancel()
-        await notch?.hide()
-        model.currentResult = nil
+    /// Return to the resting compact state.
+    func dismissToIdle() async {
+        correctionHideTask?.cancel()
+        model.display = .idle
+        await notch?.compact(on: Self.preferredScreen)
     }
 
-    /// Prefer the built-in display (the one with the notch) when there are
-    /// multiple screens. Fall back to whichever screen is "main" or the
-    /// first one if nothing else works.
+    private func handleHover(_ hovering: Bool) async {
+        // Hover doesn't disturb correction displays.
+        if model.display.isCorrection { return }
+
+        if hovering {
+            guard model.display.isIdle else { return }
+            try? await Task.sleep(for: Self.hoverEnterDelay)
+            // Re-check both intent and physical hover after the debounce.
+            guard model.display.isIdle, notch?.isHovering == true else { return }
+            model.display = .popover
+            await notch?.expand(on: Self.preferredScreen)
+        } else {
+            guard model.display.isPopover else { return }
+            try? await Task.sleep(for: Self.hoverLeaveDelay)
+            guard model.display.isPopover, notch?.isHovering == false else { return }
+            await dismissToIdle()
+        }
+    }
+
     private static var preferredScreen: NSScreen {
-        // Inlined notch check — `NSScreen.hasNotch` from DynamicNotchKit is
-        // internal-scoped, so we replicate the same condition publicly here.
         if let notched = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) {
             return notched
         }
-        if let main = NSScreen.main {
-            return main
-        }
-        return NSScreen.screens[0]
+        return NSScreen.main ?? NSScreen.screens[0]
     }
-}
-
-@MainActor
-final class NotchModel: ObservableObject {
-    @Published var currentResult: CorrectionResult?
 }

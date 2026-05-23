@@ -100,7 +100,7 @@ struct SettingsView: View {
                         Task {
                             await settings.testConnection()
                             if case .success(let result) = settings.testResult {
-                                await notchPresenter.show(result)
+                                await notchPresenter.showCorrection(result)
                             }
                         }
                     }
