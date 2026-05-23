@@ -22,12 +22,24 @@ final class AccessibilityPermission: ObservableObject {
     /// Settings → Privacy & Security → Accessibility.
     let runningBinaryPath: String
 
+    /// True when Vireo is running from a proper .app bundle (with bundle ID
+    /// co.vireo), not the loose Xcode/swift-run executable. AX trust only
+    /// holds across rebuilds when we're running from the .app.
+    let runningFromBundle: Bool
+
     private var observer: AnyCancellable?
 
     init() {
         let granted = AXIsProcessTrusted()
+        let binaryPath = Bundle.main.executablePath ?? "<unknown>"
+        let bundlePath = Bundle.main.bundlePath
+        let fromBundle = Bundle.main.bundleIdentifier == "co.vireo"
+            && !bundlePath.contains("DerivedData")
+            && !bundlePath.contains(".build/")
+
         self.isGranted = granted
-        self.runningBinaryPath = Bundle.main.executablePath ?? "<unknown>"
+        self.runningBinaryPath = binaryPath
+        self.runningFromBundle = fromBundle
 
         observer = NotificationCenter.default
             .publisher(for: NSApplication.didBecomeActiveNotification)
@@ -37,7 +49,7 @@ final class AccessibilityPermission: ObservableObject {
                 }
             }
 
-        Self.logDiagnostics(granted: granted)
+        Self.logDiagnostics(granted: granted, fromBundle: fromBundle)
     }
 
     func refresh() {
@@ -79,12 +91,25 @@ final class AccessibilityPermission: ObservableObject {
 
     // MARK: - Diagnostics
 
-    private static func logDiagnostics(granted: Bool) {
+    private static func logDiagnostics(granted: Bool, fromBundle: Bool) {
         print("──── Vireo accessibility diagnostics ────")
         print("Bundle ID:       \(Bundle.main.bundleIdentifier ?? "<nil — SPM executable, no Info.plist>")")
         print("Bundle path:     \(Bundle.main.bundlePath)")
         print("Executable path: \(Bundle.main.executablePath ?? "<unknown>")")
         print("AX trusted:      \(granted)")
+        if !fromBundle {
+            print("")
+            print("⚠️  YOU ARE NOT RUNNING FROM Vireo.app.")
+            print("⚠️  This is the loose Xcode/swift-run binary whose code-")
+            print("⚠️  signature hash changes on every rebuild. macOS will")
+            print("⚠️  refuse to keep Accessibility granted to it.")
+            print("⚠️")
+            print("⚠️  Quit this instance and run:")
+            print("⚠️    cd ~/Projects/vireo && bash scripts/run.sh")
+            print("⚠️")
+            print("⚠️  That builds Vireo.app and opens it. Grant *that*")
+            print("⚠️  Vireo in System Settings → Privacy → Accessibility.")
+        }
         print("─────────────────────────────────────────")
     }
 }

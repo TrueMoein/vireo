@@ -42,6 +42,9 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            if !permission.runningFromBundle {
+                wrongBinaryBanner
+            }
             providerSection
             modelSection
             hotkeySection
@@ -51,8 +54,37 @@ struct SettingsView: View {
             testResultSection
         }
         .formStyle(.grouped)
-        .frame(width: 540, height: 820)
+        .frame(width: 540, height: 860)
         .onAppear { permission.refresh() }
+    }
+
+    private var wrongBinaryBanner: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.octagon.fill")
+                        .foregroundStyle(.orange)
+                        .font(.title3)
+                    Text("Running the wrong binary")
+                        .font(.headline)
+                }
+                Text("This Vireo is the loose Xcode/swift-run executable. Its code signature changes on every rebuild, so Accessibility grants won't stick. Hotkey + hover button won't work.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Quit, then in Terminal:\n  cd ~/Projects/vireo\n  bash scripts/run.sh")
+                    .font(.system(.caption2, design: .monospaced))
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.regularMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                Button("Quit Vireo") {
+                    NSApp.terminate(nil)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
     }
 
     private var captureSection: some View {
