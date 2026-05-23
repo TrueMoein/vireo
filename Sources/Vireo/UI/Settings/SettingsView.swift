@@ -158,18 +158,50 @@ struct SettingsView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                         .font(.title3)
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Accessibility not granted")
                             .font(.callout)
-                        Text("Vireo needs this to read selected text from other apps. After granting, quit and relaunch Vireo.")
+                        Text("macOS tracks this per binary, so the exact Vireo enabled in System Settings must match the one running here:")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button("Open System Settings…") {
-                            permission.openSystemSettings()
+
+                        Text(permission.runningBinaryPath)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.primary)
+                            .textSelection(.enabled)
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.regularMaterial)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                        Text("Fix:\n1. Click \"Request & open Settings\" — this auto-adds the running Vireo to the Accessibility list.\n2. In System Settings → Privacy & Security → Accessibility, toggle Vireo on.\n3. Click \"Quit Vireo\" below, then re-run from Xcode (⌘R) or `swift run`.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        HStack {
+                            Button("Request & open Settings…") {
+                                permission.requestAndOpenSettings()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+
+                            Button("Quit Vireo") {
+                                permission.quitForRelaunch()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button {
+                                permission.refresh()
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .help("Re-check AX status")
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
                         .padding(.top, 2)
                     }
                     Spacer()
