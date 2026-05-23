@@ -30,6 +30,9 @@ xcuserdata/
 Packages/
 # Package.resolved is intentionally NOT ignored — pin SPM versions
 
+# App bundle produced by scripts/build-app.sh
+Vireo.app/
+
 # Fastlane
 fastlane/report.xml
 fastlane/Preview.html

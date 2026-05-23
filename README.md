@@ -50,6 +50,36 @@ Vireo, you can also paste / change the key from Settings → Provider — the
 `.env` file is only for development convenience; production keys live in
 the macOS Keychain.
 
+### Running for real (with Accessibility working)
+
+macOS tracks Accessibility grants per binary's code-signature hash, and
+both `swift run` and Xcode produce a loose Mach-O whose hash changes on
+every rebuild — so AX grants evaporate. To get a proper bundle:
+
+```bash
+bash scripts/build-app.sh      # wraps the binary in Vireo.app (bundle ID co.vireo)
+open Vireo.app                 # launch
+```
+
+Then grant **Vireo.app** (not the loose binary) in System Settings →
+Privacy & Security → Accessibility, quit Vireo from the notch popover,
+and re-run `open Vireo.app`. Ad-hoc signing means AX trust may still
+need re-granting after a clean rebuild — for sticky trust, create a
+local self-signed code-signing identity named "Vireo Dev" in Keychain
+Access (Certificate Assistant → Create a Certificate → Self Signed
+Root → Code Signing). The script auto-picks it up next time.
+
+### Running for quick iteration (without Accessibility)
+
+```bash
+swift run                      # OR ⌘R inside Xcode after `open Package.swift`
+```
+
+This launches the loose executable directly. Faster build/run loop, but
+hotkey + hover-button text capture won't work because AX isn't trusted.
+Settings UI still works; you can use the Test connection button to
+exercise the LLM pipeline without grabbing text from other apps.
+
 For the menubar + notch app to run with the right entitlements (Accessibility,
 hardened runtime, signing), open in Xcode:
 
