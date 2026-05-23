@@ -50,6 +50,22 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 cp "$BIN_PATH" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 
+BUILD_DIR=".build/${ARCH}-apple-macosx/${CONFIG}"
+
+# Copy frameworks (Sparkle, etc.) and SPM resource bundles (GRDB,
+# KeyboardShortcuts) next to the binary. The binary's only LC_RPATH is
+# @loader_path, so anything it links against must live alongside it.
+shopt -s nullglob
+for fwk in "$BUILD_DIR"/*.framework; do
+    cp -R "$fwk" "${APP_BUNDLE}/Contents/MacOS/"
+    echo "   + $(basename "$fwk")"
+done
+for bnd in "$BUILD_DIR"/*.bundle; do
+    cp -R "$bnd" "${APP_BUNDLE}/Contents/MacOS/"
+    echo "   + $(basename "$bnd")"
+done
+shopt -u nullglob
+
 cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/propertylist-1.0.dtd">
