@@ -1,6 +1,6 @@
 // VireoApp.swift — @main App entry. The notch widget is the primary surface
 // (owned by AppDelegate); the only SwiftUI Scene is the Settings window,
-// reachable from the notch popover.
+// reachable from the notch popover via SettingsLink.
 
 import SwiftUI
 
@@ -13,6 +13,7 @@ struct VireoApp: App {
             SettingsView()
                 .environmentObject(appDelegate.settings)
                 .environmentObject(appDelegate.notchPresenter)
+                .environmentObject(appDelegate.permission)
         }
     }
 }
