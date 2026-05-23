@@ -8,6 +8,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var notchPresenter: NotchPresenter
     @State private var saveConfirmation: String?
 
     private static let recommendedModels = [
@@ -96,7 +97,12 @@ struct SettingsView: View {
                     .keyboardShortcut(.return, modifiers: .command)
 
                     Button(isRunning ? "Testing…" : "Test connection") {
-                        Task { await settings.testConnection() }
+                        Task {
+                            await settings.testConnection()
+                            if case .success(let result) = settings.testResult {
+                                await notchPresenter.show(result)
+                            }
+                        }
                     }
                     .disabled(!settings.hasAPIKey || isRunning)
 
