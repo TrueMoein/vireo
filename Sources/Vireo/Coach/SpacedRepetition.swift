@@ -26,10 +26,11 @@ enum Grade: Sendable, Hashable {
 
 enum SpacedRepetition {
     /// Initialize a fresh card. Used when a weakness gets promoted to .active
-    /// for the first time.
+    /// for the first time. Initial dueAt = now so newly-promoted items
+    /// immediately surface in the review queue; subsequent intervals are
+    /// computed by `apply` based on the user's rating.
     static func initialState(now: Date = Date()) -> (ease: Double, intervalDays: Double, dueAt: Date) {
-        let initialInterval: Double = 1
-        return (ease: 2.5, intervalDays: initialInterval, dueAt: now.addingTimeInterval(initialInterval * 86_400))
+        return (ease: 2.5, intervalDays: 0, dueAt: now)
     }
 
     /// Apply a rating to existing scheduler state and return the new state +
