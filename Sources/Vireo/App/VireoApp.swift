@@ -20,6 +20,7 @@ struct VireoApp: App {
         Window("Vireo", id: "vireo-main") {
             MainWindowView()
                 .environmentObject(appDelegate.sessionStore)
+                .environmentObject(appDelegate.drillGenerator)
         }
         .defaultSize(width: 880, height: 620)
         .windowResizability(.contentMinSize)

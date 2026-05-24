@@ -1,14 +1,21 @@
-// ReviewSessionView.swift — sheet UI for one review run.
+// ReviewSessionView.swift — sheet UI for one review run with LLM-generated
+// fill-in-the-blank drills.
 //
-// Shows each due weakness item: rule, an example of the user's own recent
-// mistake in this pattern, and four rating buttons (Again / Hard / Good /
-// Easy) wired to the SM-2 scheduler. On completion shows a tally and a
-// "Done" button.
+// Each card:
+//   1. Shows the rule + an LLM-generated drill sentence with ___ blank.
+//   2. User mentally recalls the answer, clicks "Reveal answer".
+//   3. Reveal shows the answer + context + the four rating buttons.
+//   4. Rating advances to next item (or completion view).
+//
+// If drill generation fails (no API key, network error, JSON parse fail),
+// the card falls back to showing the user's recent mistake on this rule
+// and skips the reveal step — straight to rating.
 
 import SwiftUI
 
 struct ReviewSessionView: View {
     @StateObject private var session: ReviewSession
+    @EnvironmentObject private var drillGenerator: DrillGenerator
     @Environment(\.dismiss) private var dismiss
 
     init(tracker: WeaknessTracker, repository: SessionRepository, store: SessionStore) {
@@ -25,7 +32,7 @@ struct ReviewSessionView: View {
             Divider()
             content
         }
-        .frame(width: 620, height: 560)
+        .frame(width: 640, height: 600)
         .background(.regularMaterial)
         .task { await session.start() }
     }
@@ -64,7 +71,13 @@ struct ReviewSessionView: View {
         } else if session.isComplete {
             completionView
         } else if let current = session.current {
-            reviewCard(item: current)
+            ReviewCard(
+                item: current.weakness,
+                example: current.example,
+                drillGenerator: drillGenerator,
+                onRate: { grade in await session.rate(grade) }
+            )
+            .id(current.id)
         } else {
             VStack {
                 Spacer()
@@ -73,97 +86,6 @@ struct ReviewSessionView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
             }
-        }
-    }
-
-    private func reviewCard(item: ReviewSession.Item) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                categoryBanner(item.weakness.category)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Rule")
-                        .font(.caption.bold())
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                    Text(item.weakness.rule)
-                        .font(.system(.title3, design: .serif).weight(.medium))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let example = item.example {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Your recent mistake")
-                            .font(.caption.bold())
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                        HStack(alignment: .center, spacing: 8) {
-                            Text(example.originalPhrase)
-                                .strikethrough()
-                                .foregroundStyle(Color.Vireo.mistake)
-                            Image(systemName: "arrow.right")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            Text(example.fixedPhrase)
-                                .foregroundStyle(Color.Vireo.correction)
-                                .bold()
-                        }
-                        .font(.system(.callout, design: .monospaced))
-                        Text(example.explanation)
-                            .font(.callout)
-                            .foregroundStyle(.primary.opacity(0.85))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("How well do you remember this rule?")
-                        .font(.callout.bold())
-                    HStack(spacing: 8) {
-                        ratingButton(.again, label: "Again", subLabel: "Forgot", tint: Color.Vireo.mistake)
-                        ratingButton(.hard, label: "Hard", subLabel: "Struggled", tint: Color.Vireo.warning)
-                        ratingButton(.good, label: "Good", subLabel: "Got it", tint: Color.Vireo.correction)
-                        ratingButton(.easy, label: "Easy", subLabel: "Instant", tint: Color.Vireo.correctionHighlight)
-                    }
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(20)
-        }
-    }
-
-    private func ratingButton(_ grade: Grade, label: String, subLabel: String, tint: Color) -> some View {
-        Button {
-            Task { await session.rate(grade) }
-        } label: {
-            VStack(spacing: 2) {
-                Text(label)
-                    .font(.callout.bold())
-                Text(subLabel)
-                    .font(.caption2)
-                    .opacity(0.85)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-        }
-        .buttonStyle(.borderedProminent)
-        .tint(tint)
-        .controlSize(.large)
-    }
-
-    private func categoryBanner(_ raw: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: categoryIcon(for: raw))
-                .foregroundStyle(Color.Vireo.correction)
-            Text(prettifiedCategory(raw))
-                .font(.caption.bold())
-                .textCase(.uppercase)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -213,6 +135,222 @@ struct ReviewSessionView: View {
         .padding(.vertical, 6)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+// MARK: - ReviewCard (one item)
+
+private struct ReviewCard: View {
+    let item: WeaknessItem
+    let example: Mistake?
+    let drillGenerator: DrillGenerator
+    let onRate: (Grade) async -> Void
+
+    @State private var drill: Drill?
+    @State private var drillError: String?
+    @State private var revealed: Bool = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                categoryBanner(item.category)
+                ruleSection
+                Divider()
+                drillSection
+                if shouldShowRatings {
+                    Divider()
+                    ratingsRow
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+        }
+        .task { await loadDrill() }
+    }
+
+    private func loadDrill() async {
+        guard drill == nil, drillError == nil else { return }
+        do {
+            drill = try await drillGenerator.drill(
+                for: item.id ?? 0,
+                rule: item.rule,
+                example: example
+            )
+        } catch {
+            drillError = error.localizedDescription
+        }
+    }
+
+    private var ruleSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Rule")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            Text(item.rule)
+                .font(.system(.title3, design: .serif).weight(.medium))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var drillSection: some View {
+        if let drill {
+            drillCard(drill)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .animation(.smooth(duration: 0.25), value: revealed)
+        } else if drillError != nil {
+            fallbackExample
+        } else {
+            loadingDrill
+        }
+    }
+
+    private var loadingDrill: some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            Text("Generating a practice sentence…")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var fallbackExample: some View {
+        if let example {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Your recent mistake")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                HStack(alignment: .center, spacing: 8) {
+                    Text(example.originalPhrase)
+                        .strikethrough()
+                        .foregroundStyle(Color.Vireo.mistake)
+                    Image(systemName: "arrow.right")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(example.fixedPhrase)
+                        .foregroundStyle(Color.Vireo.correction)
+                        .bold()
+                }
+                .font(.system(.callout, design: .monospaced))
+                Text(example.explanation)
+                    .font(.callout)
+                    .foregroundStyle(.primary.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let drillError {
+                    Text("Couldn't generate a fresh drill: \(drillError)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                }
+            }
+        } else {
+            Text("No example available.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func drillCard(_ drill: Drill) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Practice")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            if revealed {
+                Text(buildHighlightedSentence(drill: drill))
+                    .font(.system(.title3, design: .serif))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Text(drill.context)
+                    .font(.callout)
+                    .foregroundStyle(.primary.opacity(0.82))
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(drill.blank)
+                    .font(.system(.title3, design: .serif))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Button {
+                    revealed = true
+                } label: {
+                    Label("Reveal answer", systemImage: "eye.fill")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .padding(.top, 4)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    /// Replace `___` in the drill's blank with the highlighted answer.
+    private func buildHighlightedSentence(drill: Drill) -> AttributedString {
+        let placeholder = "___"
+        var result = AttributedString(drill.blank)
+        if let range = result.range(of: placeholder) {
+            var replacement = AttributedString(drill.answer)
+            replacement.foregroundColor = Color.Vireo.correction
+            replacement.inlinePresentationIntent = .stronglyEmphasized
+            result.replaceSubrange(range, with: replacement)
+        }
+        return result
+    }
+
+    private var shouldShowRatings: Bool {
+        revealed || drill == nil  // drill nil = fallback, ratings always shown
+    }
+
+    private var ratingsRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("How well do you remember this rule?")
+                .font(.callout.bold())
+            HStack(spacing: 8) {
+                ratingButton(.again, label: "Again", subLabel: "Forgot", tint: Color.Vireo.mistake)
+                ratingButton(.hard, label: "Hard", subLabel: "Struggled", tint: Color.Vireo.warning)
+                ratingButton(.good, label: "Good", subLabel: "Got it", tint: Color.Vireo.correction)
+                ratingButton(.easy, label: "Easy", subLabel: "Instant", tint: Color.Vireo.correctionHighlight)
+            }
+        }
+    }
+
+    private func ratingButton(_ grade: Grade, label: String, subLabel: String, tint: Color) -> some View {
+        Button {
+            Task { await onRate(grade) }
+        } label: {
+            VStack(spacing: 2) {
+                Text(label).font(.callout.bold())
+                Text(subLabel).font(.caption2).opacity(0.85)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(tint)
+        .controlSize(.large)
+    }
+
+    private func categoryBanner(_ raw: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: categoryIcon(for: raw))
+                .foregroundStyle(Color.Vireo.correction)
+            Text(prettifiedCategory(raw))
+                .font(.caption.bold())
+                .textCase(.uppercase)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func categoryIcon(for category: String) -> String {

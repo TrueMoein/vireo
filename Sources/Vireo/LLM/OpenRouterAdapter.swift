@@ -69,6 +69,81 @@ struct OpenRouterAdapter: ProviderAdapter {
         }
     }
 
+    /// Generate a fresh fill-in-the-blank practice sentence for a given
+    /// English rule. Used by the review session for active-recall drills.
+    func generateDrill(rule: String, example: Mistake?) async throws -> Drill {
+        var req = URLRequest(url: Self.endpoint)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("https://github.com/vireo-app/vireo", forHTTPHeaderField: "HTTP-Referer")
+        req.setValue("Vireo", forHTTPHeaderField: "X-Title")
+        req.timeoutInterval = 60
+
+        var userMessage = "Rule: \(rule)"
+        if let example {
+            userMessage += "\nRecent mistake illustrating it:\n  original: \"\(example.originalPhrase)\"\n  fixed: \"\(example.fixedPhrase)\""
+        }
+
+        let body: [String: Any] = [
+            "model": model,
+            "messages": [
+                ["role": "system", "content": Self.drillSystemPrompt],
+                ["role": "user", "content": userMessage],
+            ],
+            "response_format": ["type": "json_object"],
+            // Slightly higher temperature than corrections so drills vary in
+            // topic across reviews of the same rule.
+            "temperature": 0.6,
+        ]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw AdapterError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let bodyText = String(data: data, encoding: .utf8) ?? "<no body>"
+            throw AdapterError.httpStatus(http.statusCode, bodyText)
+        }
+
+        let chat = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
+        guard let raw = chat.choices.first?.message.content else {
+            throw AdapterError.emptyResponse
+        }
+
+        let normalized = Self.normalizeJSONContent(raw)
+        guard let contentData = normalized.data(using: .utf8) else {
+            throw AdapterError.decodeFailure("Empty content after normalization", raw)
+        }
+
+        do {
+            return try JSONDecoder().decode(Drill.self, from: contentData)
+        } catch {
+            throw AdapterError.decodeFailure(error.localizedDescription, raw)
+        }
+    }
+
+    private static let drillSystemPrompt = """
+    You generate ONE fresh fill-in-the-blank English practice sentence for a Persian-L1 English learner who works as a software developer.
+
+    You will receive an English rule (and possibly a recent mistake illustrating it). Output a single drill sentence that exercises the same rule on different vocabulary.
+
+    Output ONLY this JSON (no other text, no Markdown fences, no commentary):
+    {
+      "blank": "<sentence containing three underscores ___ where the answer goes>",
+      "answer": "<exact text that fills the blank — no quotes, no surrounding context>",
+      "context": "<one short sentence (≤ 15 words) explaining why this answer is correct>"
+    }
+
+    Constraints:
+    - 8 to 15 words in the sentence
+    - Use a topic / vocabulary DIFFERENT from any example shown
+    - Exactly one blank, marked with three underscores ___
+    - Sentence should be natural English a developer or knowledge worker might write (work, code, meetings, deployments, docs)
+    - The "answer" field is the EXACT minimal text that fills the blank — no quotes, no surrounding context, no punctuation that isn't part of the answer
+    """
+
     /// Strip Markdown code fences and any prose around the outer JSON object.
     /// Handles ```json\n{…}\n```, ```\n{…}\n```, and "Here's the JSON: {…}".
     static func normalizeJSONContent(_ raw: String) -> String {

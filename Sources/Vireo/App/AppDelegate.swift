@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let sessionRepository: SessionRepository?
     let weaknessTracker: WeaknessTracker?
     let sessionStore: SessionStore
+    let drillGenerator: DrillGenerator
 
     override init() {
         let settings = SettingsModel()
@@ -39,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // for the History tab to render a clean error state if the DB
         // failed to open.
         self.sessionStore = SessionStore(repository: repo, weaknessTracker: tracker)
+        self.drillGenerator = DrillGenerator(settings: settings)
 
         let presenter = NotchPresenter(settings: settings)
         let coordinator = AppCoordinator(
