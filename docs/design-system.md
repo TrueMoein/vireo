@@ -1,17 +1,23 @@
 # Design system
 
-Locked decisions. See [`plan.md`](plan.md) for full reasoning.
+Locked decisions. See [`plan.md`](plan.md) for original reasoning;
+this doc is the source of truth for what's actually in the code today.
 
 ## Palette
 
-Custom, not `Color.red` / `Color.green`.
+Custom tokens, not `Color.red` / `Color.green`. All defined in
+`Sources/Vireo/DesignSystem/Palette.swift` as `Color.Vireo.*`.
 
-| Token | Light | Dark | Use |
-|---|---|---|---|
-| `mistake` | `#D97757` | `#D97757` | Strikethrough on changed tokens, error states. Calmest "wrong" on display. |
-| `correction` | `#7BA889` | `#A8C9B0` | Edited tokens in the corrected sentence, success states. |
-| `surface` | `#F4F1EC` | `#1C1B19` | Paper-warm card backgrounds, hero surfaces. |
-| `accent` | `#C99846` | `#E8B36A` | Streak/progress, calls to action. Dusty amber, never yellow. |
+| Token | Approx hex | Use |
+|---|---|---|
+| `mistake` | `#D97757` | Strikethrough on deleted tokens in the diff, error tones in messages. |
+| `correction` | `#7BA889` | Edited tokens in the corrected sentence, success states, active style chip, sage tints throughout. |
+| `correctionHighlight` | `#A8C9B0` | Lighter sage for emphasized insertions or "Easy" rating chips. |
+| `surfaceLight` | `#F4F1EC` | Paper-warm card background, light-mode mesh-gradient seeds. |
+| `surfaceDark` | `#1C1B19` | Paper-dark card background, dark-mode mesh-gradient seeds. |
+| `accent` | `#C99846` | "Due now" count in the coach card. Dusty amber. Reserved for progress + attention. |
+| `warning` | `#D98C33` | Setup-needed pills, "Vireo isn't running from a bundle" tone, AX-not-granted state. |
+| `info` | `#5C8CC8` | Non-urgent notch info messages. |
 
 Avoid pure white/black, Duolingo green, system reds at large sizes.
 
@@ -56,12 +62,33 @@ coherently.
 
 ## Signature moments
 
-- **First-launch wow**: notch expands, `MeshGradient` animates, sentence types
-  itself in New York serif: *"I'll quietly fix your English."* Collapses. No
-  buttons.
-- **Correction reveal**: `ConcentricRectangle` morphs from device-corner
-  curvature into a card; content fades with `.blurReplace` at `delay: 0.15`
-  while the frame is still expanding.
-- **Progress view**: 14-day horizontal stacked bar of error categories. Tap a
-  day → bar morphs via `matchedGeometryEffect` into the day's actual mistake
-  sentences.
+- **First-launch onboarding**: 5-step wizard. The welcome step has an
+  animated `MeshGradient` backdrop driven by `meshT` and a typing-in
+  serif tagline ("Hi. I'm Vireo. I'll help you learn English from your
+  own writing.") that types out at ~28ms per character. The style
+  picker step uses the same sage chrome as the active correction card.
+- **Streaming correction**: the notch slides into
+  `StreamingCorrectionCard` with the corrected text appearing
+  character-by-character (driven by the SSE parser surfacing partials),
+  plus a pulsing serif caret (`▍`) that opacity-cycles `0.25 ↔ 1.0`
+  every 0.6s.
+- **Correction reveal → diff**: when the full result arrives, the card
+  transitions via `.blurReplace.combined(with: .scale(0.96))` into
+  `CorrectionCard`. The sentence renders as a word-diff:
+  `SentenceDiff.render` produces an `AttributedString` with coral
+  strikethrough on deletions and sage bold on insertions, inline in
+  the original sentence.
+- **Style chip flip**: clicking the style chip on the correction card
+  opens a `Menu` of all styles; picking a different one re-uses the
+  same card identity (stable `displayKey` for streaming, fresh
+  `.correction(result)` after) so the transition feels like a switch,
+  not a reload.
+
+## Reference: what's where in code
+
+| Concern | File |
+|---|---|
+| Palette tokens | `Sources/Vireo/DesignSystem/Palette.swift` |
+| Type roles | `Sources/Vireo/DesignSystem/Typography.swift` |
+| Motion presets (`.Vireo.entry`, `.Vireo.snappy`, `.Vireo.microInteraction`) | `Sources/Vireo/DesignSystem/Motion.swift` |
+| Glass material helper (`.vireoGlassCard(cornerRadius:)`) | `Sources/Vireo/DesignSystem/Materials.swift` |

@@ -1,149 +1,218 @@
 # LLM providers
 
-Vireo speaks to LLMs through `ProviderAdapter`. Each adapter sends the user's
-text + the standard correction prompt to its provider, requests a
-schema-conformant structured response, and decodes into the same
-`CorrectionResult` Codable.
+Vireo speaks to LLMs through one adapter today: **`OpenRouterAdapter`**.
+[OpenRouter](https://openrouter.ai) is an OpenAI-compatible aggregator —
+one API key, one HTTP client, and the user picks any model at runtime
+from Settings. Direct per-provider adapters are out of v1 scope (the
+files `AnthropicAdapter.swift` and `OpenAIAdapter.swift` exist as
+stubs only).
 
-## v0.1: OpenRouter as the single adapter
+This doc covers the wire format, how the active **Correction Style**
+plugs into the prompt, the streaming pipeline, and the shape of any
+future adapter.
 
-Vireo ships with **`OpenRouterAdapter`** as the only enabled adapter.
-[OpenRouter](https://openrouter.ai) is an OpenAI-compatible aggregator that
-gives access to ~100 models behind one API key. This means: one Keychain
-entry, one auth flow, one HTTP client — and the user picks any model at
-runtime from Settings.
+## The contract
 
-Defaults shipped:
+Every adapter returns the same Codable: `LLM/CorrectionResult.swift`.
 
-| Routing | Default model | Why |
-|---|---|---|
-| Fast (every correction) | `anthropic/claude-haiku-4.5` | ~70B class, fast, cheap, excellent at structured output, great at grammar nuance. |
-| Quality (review-exercise generation, Phase 5) | `anthropic/claude-opus-4.7` | Rare call, quality matters. |
+```jsonc
+{
+  "corrected_text": "the full corrected/rewritten version of the input",
+  "mistakes": [
+    {
+      "original":    "the original phrase",
+      "fixed":       "the corrected phrase",
+      "category":    "article|tense|preposition|agreement|word_order|vocab|spelling|punctuation|other",
+      "rule":        "the underlying rule in one short sentence",
+      "explanation": "one or two sentences explaining the fix"
+    }
+  ]
+}
+```
+
+Constraints:
+
+- Output **only** the JSON object — no Markdown fences, no prose.
+- If the input has no mistakes (grammar styles) or the style is a rewrite,
+  `mistakes` should be `[]`.
+- Category strings are snake_case from the list above. **Lenient decode**:
+  the `Category` enum's `init(from:)` maps unknown values to `.other`, so
+  a hallucinated category doesn't tank the whole correction.
+
+`CorrectionResult` carries two extra fields populated *after* JSON
+decode, not from the LLM:
+
+- `originalText: String` — set by the adapter from the user's input so the
+  notch can render a word-diff.
+- `styleID: UUID?` — set by `AppCoordinator` to record which style
+  produced the row. Persisted alongside the session.
+
+## The system prompt comes from the active style
+
+The user's active `CorrectionStyle` is the source of truth for "what
+should the model do." The adapter's old hard-coded prompt is gone —
+`OpenRouterAdapter` now accepts `systemPrompt` at init time.
+
+The pipeline:
+
+1. `AppCoordinator.correct(text:styleID:)` calls
+   `styleStore.resolve(id:)` to pick the active or explicitly-requested
+   style.
+2. It reads `style.wrappedPrompt` — which is `style.systemPrompt`
+   (the user's *intent*) plus an appended **JSON return contract**
+   (the schema above + the constraint rules).
+3. It constructs `OpenRouterAdapter(apiKey:, model:, systemPrompt:)`.
+
+This means **custom prompts work without users having to specify the
+JSON shape themselves.** They write "rewrite as a polite reminder" and
+Vireo handles the rest. See `LLM/CorrectionStyle.swift` for the wrapper.
+
+## Two adapter methods
+
+```swift
+struct OpenRouterAdapter: ProviderAdapter {
+    let apiKey: String
+    let model: String
+    let systemPrompt: String
+
+    /// Non-streaming. Used by the Shortcuts intent path and as the
+    /// streaming-toggle-off fallback. Single POST, full result back.
+    func correct(_ text: String) async throws -> CorrectionResult
+
+    /// Streaming. Used by the hotkey / hover / double-shift / clipboard /
+    /// re-correct flows when `settings.streamingEnabled` is true.
+    /// Invokes the partial-text callback on the MainActor as the
+    /// model emits each chunk.
+    func correctStreaming(
+        _ text: String,
+        onPartialCorrection: @Sendable @MainActor (String) -> Void
+    ) async throws -> CorrectionResult
+}
+```
+
+## Endpoint + auth
+
+```
+POST https://openrouter.ai/api/v1/chat/completions
+Authorization: Bearer <OPENROUTER_API_KEY>
+Content-Type: application/json
+HTTP-Referer: https://github.com/TrueMoein/vireo
+X-Title: Vireo
+```
+
+Body for both methods is the same shape; `correctStreaming` adds
+`"stream": true`:
+
+```jsonc
+{
+  "model":            "<vendor/model>",
+  "messages": [
+    { "role": "system",  "content": "<wrappedPrompt from active style>" },
+    { "role": "user",    "content": "<selected text>" }
+  ],
+  "response_format":  { "type": "json_object" },
+  "temperature":      0.2,
+  "stream":           true   // only in correctStreaming
+}
+```
+
+We use `response_format: json_object` rather than strict `json_schema`
+because OpenRouter's pass-through of strict schemas varies wildly by
+upstream provider. Trade some token cost for portability; client-side
+parsing handles violations.
+
+## The streaming pipeline
+
+Server-Sent Events arrive as `data: <json>` lines, terminated by
+`data: [DONE]`. Each JSON envelope contains a `delta.content` fragment.
+
+```
+URLSession.bytes(for:)
+        │
+        ▼ async lines
+[ data: {"choices":[{"delta":{"content":"…"}}]} ]
+        │
+        ▼ decode StreamChunk, append delta.content to buffer
+String buffer
+        │
+        ▼ StreamingJSONFieldExtractor.feed(_:)
+"corrected_text" value, partial-by-partial
+        │
+        ▼ MainActor callback
+NotchPresenter.updateStreaming(partial:)
+        │
+        ▼ data: [DONE]
+JSONDecoder over the full buffer
+        │
+        ▼
+CorrectionResult { correctedText, mistakes[], originalText, styleID }
+```
+
+`StreamingJSONFieldExtractor` is a single-field state machine. It scans
+for `"corrected_text"\s*:\s*"` and then captures bytes (with full JSON
+escape handling, including `\uXXXX`) until the unescaped closing `"`.
+Only that one field streams; `mistakes` is parsed in one shot at the
+end. Source: `Sources/Vireo/LLM/StreamingJSONFieldExtractor.swift`.
 
 ## The ≥30B recommendation
 
-The Settings model picker accepts any OpenRouter model name, but surfaces a
-warning when the user enters something below ~30B parameters. Why:
+The Settings model picker accepts any OpenRouter model name, but warns
+when the user enters something below ~30B parameters:
 
-- Grammar coaching wants nuance the model can't fake. A 3B / 8B model will
-  often produce technically-correct-but-tone-deaf corrections, miss
-  L1-interference patterns, or hallucinate rules.
-- Structured output (our `CorrectionResult` JSON) is materially less
-  reliable on small models. They'll silently violate enum constraints and
-  drop required fields, forcing retries.
-- The cost difference is small at our usage volume (a few corrections per
-  hour). Claude Haiku 4.5 at $1/M input + $5/M output works out to roughly
-  $0.001 per correction.
+- Grammar coaching wants nuance smaller models fake unconvincingly.
+- Structured-output adherence drops noticeably below 30B (silent enum
+  violations, dropped required fields).
+- Cost difference is small at typical usage (Claude Haiku 4.5 is
+  roughly $0.001 per correction).
 
-Recommended (≥30B) quick-picks shown in Settings:
+Quick-picks shown in Settings → Provider:
 - `anthropic/claude-haiku-4.5` (default)
 - `google/gemini-3.1-flash`
 - `openai/gpt-4o-mini`
 - `mistralai/mistral-large`
 
-The warning is dismissible — users can choose anything they want.
+The warning is dismissible — users can pick anything they want.
 
-Endpoint: `POST https://openrouter.ai/api/v1/chat/completions`
-Auth: `Authorization: Bearer <OPENROUTER_API_KEY>`
+## Defensive JSON normalization
 
-## Direct-provider adapters (future)
+Models occasionally wrap their output in Markdown fences or stick a
+sentence of prose before the JSON, even with `response_format` set.
+`OpenRouterAdapter.normalizeJSONContent` strips:
 
-`AnthropicAdapter.swift` and `OpenAIAdapter.swift` are placeholder skeletons
-for users who want their own per-provider key (cost transparency,
-prompt-caching support, org compliance). Not in v0.1 scope.
+- Leading ```` ```json ```` or ```` ``` ```` fences with optional language tag
+- Trailing ```` ``` ```` fences
+- Any prose before the first `{` or after the last `}`
 
-## The schema
+After normalization, decoding goes through a `JSONDecoder` with
+`.keyDecodingStrategy = .convertFromSnakeCase`, so the JSON's
+`corrected_text` maps to `CorrectionResult.correctedText` cleanly.
 
-Author once, enforce twice. Written to OpenAI's stricter JSON-schema subset
-(no `oneOf`, no `default`, `additionalProperties: false`) so it's portable.
+## Adding a new provider
 
-```jsonc
-{
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["corrected_text", "mistakes"],
-  "properties": {
-    "corrected_text": {
-      "type": "string",
-      "description": "Full corrected version of the input, preserving the user's voice and intent."
-    },
-    "mistakes": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["original", "fixed", "category", "rule", "explanation"],
-        "properties": {
-          "original": { "type": "string" },
-          "fixed":    { "type": "string" },
-          "category": {
-            "type": "string",
-            "enum": [
-              "article",
-              "tense",
-              "preposition",
-              "agreement",
-              "word_order",
-              "vocab",
-              "spelling",
-              "punctuation",
-              "l1_interference",
-              "other"
-            ]
-          },
-          "rule":        { "type": "string" },
-          "explanation": { "type": "string" },
-          "severity":    { "type": "string", "enum": ["minor", "moderate", "major"] }
-        }
-      }
-    }
-  }
-}
-```
+The OpenRouter aggregator covers almost every model worth using. Direct
+adapters are only worth building for: per-provider prompt-caching (e.g.,
+Anthropic), org-compliance reasons, or a self-hosted model.
 
-## Enforcement modes
-
-Through OpenRouter we have two enforcement options depending on the target
-model:
-
-**Strict JSON Schema** — for models that support it (OpenAI 4o+, Google
-Gemini, and a few others):
-
-```
-response_format: {
-  type: "json_schema",
-  json_schema: { name: "correction", strict: true, schema: <above> }
-}
-```
-
-Token-level constrained. Schema violations are impossible.
-
-**Loose JSON mode** — for models that don't (Granite 4.1 8B falls here as
-of 2026-05; verify per-model):
-
-```
-response_format: { type: "json_object" }
-```
-
-The model returns valid JSON but we have to validate against our schema
-on the client side. A bounded retry on `DecodingError` re-prompts with the
-validation error message before surfacing a clean failure. No silent
-fallback.
-
-`ProviderManager.modelCapabilities` is the table of which model gets which
-treatment.
-
-## Adding a provider
-
-In v0.1 most "adding a provider" needs are satisfied by picking a different
-OpenRouter model in Settings — no code change required.
-
-When a true direct adapter is justified (cost, caching, compliance):
+When justified:
 
 1. Create `Sources/Vireo/LLM/<Name>Adapter.swift`.
-2. Conform to `ProviderAdapter`: `func correct(_ text: String) async throws -> CorrectionResult`.
-3. Translate the schema above into the provider's structured-output format.
-4. Register the adapter in `ProviderManager.allAdapters`.
-5. Surface the provider in `SettingsView` with: API key field (Keychain),
-   model picker, optional base URL override.
-6. Add a fixture-based unit test in `Tests/VireoTests/`.
+2. Conform to `ProviderAdapter` (`func correct(_ text: String) async throws -> CorrectionResult`).
+   Mirror `OpenRouterAdapter` for the streaming method if your provider
+   supports SSE.
+3. Carry `systemPrompt: String` at init — Vireo's active-style flow
+   needs it. **Do not hard-code a system prompt.**
+4. Decode into `CorrectionResult` (snake_case → camelCase via the
+   decoder's strategy). Populate `originalText` post-decode.
+5. Register the adapter in whichever construction site the user picks
+   (today: `AppCoordinator.correct(text:styleID:)` constructs
+   `OpenRouterAdapter` directly; if a `ProviderManager` returns; future
+   work).
+6. Surface the provider in `SettingsView` → `ProviderTab`: API key
+   field (Keychain via `KeychainStore`), model picker, optional base
+   URL override.
+7. Add a fixture-based unit test in `Tests/VireoTests/`.
+
+The intent path (`Sources/Vireo/Intents/CoachEnglishIntent.swift`) runs
+in a nonisolated context and reads its own UserDefaults / Keychain keys
+directly, so a new adapter has to be wired there too — duplicate the
+key constants for now (see how the active-style resolver does it).

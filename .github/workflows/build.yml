@@ -1,0 +1,52 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs on the same ref when a new commit lands.
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift-build:
+    name: swift build (debug)
+    # Vireo targets macOS 26 (Tahoe); pin to the macOS-latest runner so
+    # we pick up the newest stable Xcode + SDK GitHub provides.
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        # Pin to the newest stable Xcode the runner image ships with so
+        # builds are reproducible across runner upgrades.
+        run: sudo xcode-select -switch /Applications/Xcode.app
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Resolve packages
+        run: swift package resolve
+
+      - name: Build
+        run: swift build -c debug
+
+      - name: Test
+        run: swift test -c debug
