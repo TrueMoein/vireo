@@ -38,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // SessionStore is always non-nil; it carries an `unavailable` flag
         // for the History tab to render a clean error state if the DB
         // failed to open.
-        self.sessionStore = SessionStore(repository: repo)
+        self.sessionStore = SessionStore(repository: repo, weaknessTracker: tracker)
 
         let presenter = NotchPresenter(settings: settings)
         let coordinator = AppCoordinator(

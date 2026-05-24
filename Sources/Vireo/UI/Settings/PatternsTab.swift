@@ -7,6 +7,7 @@ import SwiftUI
 struct PatternsTab: View {
     @EnvironmentObject var store: SessionStore
     @State private var expandedCategory: String?
+    @State private var showReview = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,17 +37,25 @@ struct PatternsTab: View {
             summaryStat(label: "Mastered", value: s.mastered, color: .secondary)
             Spacer()
             Button {
-                // Review session UI lands in the next stage.
+                showReview = true
             } label: {
                 Label("Start review", systemImage: "play.fill")
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.Vireo.correction)
             .disabled(s.dueNow == 0)
-            .help(s.dueNow == 0 ? "No items are due for review yet — keep using Vireo." : "Coming in the next stage")
+            .help(s.dueNow == 0 ? "No items are due for review yet — keep using Vireo." : "Review \(s.dueNow) due item\(s.dueNow == 1 ? "" : "s")")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+        .sheet(isPresented: $showReview) {
+            if let tracker = store.weaknessTracker, let repo = store.repository {
+                ReviewSessionView(tracker: tracker, repository: repo, store: store)
+            } else {
+                Text("Review unavailable — database isn't open.")
+                    .padding()
+            }
+        }
     }
 
     private func summaryStat(label: String, value: Int, color: Color) -> some View {

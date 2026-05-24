@@ -94,6 +94,17 @@ actor SessionRepository {
         }
     }
 
+    /// The most recent mistake matching this (category, rule) — used as
+    /// the example in the review session card.
+    func latestMistake(category: String, rule: String) async throws -> Mistake? {
+        try await database.queue.read { db in
+            try Mistake
+                .filter(Column("category") == category && Column("rule") == rule)
+                .order(Column("id").desc)
+                .fetchOne(db)
+        }
+    }
+
     /// Total session count — useful for empty-state checks.
     func totalSessionCount() async throws -> Int {
         try await database.queue.read { db in

@@ -16,12 +16,14 @@ final class SessionStore: ObservableObject {
     @Published private(set) var totalCount: Int = 0
 
     let repository: SessionRepository?
+    let weaknessTracker: WeaknessTracker?
     /// True when the database failed to open at app launch; tabs can use
     /// this to show a clean error state instead of an empty list.
     let unavailable: Bool
 
-    init(repository: SessionRepository?) {
+    init(repository: SessionRepository?, weaknessTracker: WeaknessTracker? = nil) {
         self.repository = repository
+        self.weaknessTracker = weaknessTracker
         self.unavailable = repository == nil
     }
 
