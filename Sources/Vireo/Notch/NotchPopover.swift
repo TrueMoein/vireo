@@ -78,7 +78,22 @@ struct NotchPopover: View {
             .buttonStyle(NotchActionButtonStyle())
             .simultaneousGesture(
                 TapGesture().onEnded {
-                    Task { await presenter.dismissToIdle() }
+                    Task { @MainActor in
+                        await presenter.dismissToIdle()
+                        // SettingsLink fires its own openSettings, but for an
+                        // .accessory app the resulting window often appears
+                        // behind whatever was frontmost. Force activation
+                        // and bring the Settings window all the way forward.
+                        try? await Task.sleep(for: .milliseconds(80))
+                        NSApp.activate(ignoringOtherApps: true)
+                        for window in NSApp.windows {
+                            let id = window.identifier?.rawValue.lowercased() ?? ""
+                            if id.contains("settings") || window.title == "Settings" || window.title == "Vireo Settings" {
+                                window.makeKeyAndOrderFront(nil)
+                                window.orderFrontRegardless()
+                            }
+                        }
+                    }
                 }
             )
 

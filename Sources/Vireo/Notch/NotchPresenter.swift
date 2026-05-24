@@ -64,14 +64,14 @@ final class NotchPresenter: ObservableObject {
             }
     }
 
-    /// Push a correction into the notch. Auto-dismiss back to .idle after
-    /// `correctionAutoHideAfter`.
+    /// Push a correction into the notch. Stays expanded until the user
+    /// explicitly dismisses (Replace / Copy / Dismiss) — no auto-hide
+    /// timeout, because the user may still be reading the explanation.
     func showCorrection(_ result: CorrectionResult) async {
         autoHideTask?.cancel()
         if notch == nil { start() }
         model.display = .correction(result)
         await notch?.expand(on: Self.preferredScreen)
-        autoHideTask = scheduleAutoHide(after: Self.correctionAutoHideAfter)
     }
 
     /// Show a busy/loading card. Does NOT auto-dismiss — the caller is

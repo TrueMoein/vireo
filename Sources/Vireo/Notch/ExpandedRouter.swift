@@ -19,8 +19,10 @@ struct ExpandedRouter: View {
                 CorrectionCard(
                     result: result,
                     onReplace: { [weak presenter] in
-                        presenter?.coordinator?.replaceCorrection(result.correctedText)
-                        Task { @MainActor in await presenter?.dismissToIdle() }
+                        Task { @MainActor in
+                            await presenter?.coordinator?.replaceCorrection(result.correctedText)
+                            await presenter?.dismissToIdle()
+                        }
                     },
                     onCopy: { [weak presenter] in
                         presenter?.coordinator?.copyCorrection(result.correctedText)

@@ -5,8 +5,12 @@ import SwiftUI
 
 @MainActor
 final class SettingsModel: ObservableObject {
-    @Published var apiKey: String = ""
-    @Published var model: String = SettingsModel.defaultModel
+    @Published var apiKey: String = "" {
+        didSet { persistAPIKey() }
+    }
+    @Published var model: String = SettingsModel.defaultModel {
+        didSet { persistModel() }
+    }
     @Published var testResult: TestResult = .idle
 
     enum TestResult {
@@ -33,13 +37,23 @@ final class SettingsModel: ObservableObject {
         !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Persist both fields. Used by testConnection() as a defensive flush
+    /// before firing a network call.
     func save() {
+        persistAPIKey()
+        persistModel()
+    }
+
+    private func persistAPIKey() {
         let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             keychain.delete(account: Self.keychainAccount)
         } else {
             keychain.write(account: Self.keychainAccount, value: trimmed)
         }
+    }
+
+    private func persistModel() {
         UserDefaults.standard.set(model, forKey: Self.modelDefaultsKey)
     }
 

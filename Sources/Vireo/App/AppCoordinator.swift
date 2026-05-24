@@ -103,20 +103,46 @@ final class AppCoordinator {
     /// Replace the current selection in the source app with `text`.
     ///
     /// Strategy (in order):
-    /// 1. AX write-back: AXUIElementSetAttributeValue on the focused
-    ///    element with kAXSelectedTextAttribute. Direct, instant, no
-    ///    pasteboard hijack, no ⌘V timing fragility. Works in native
+    /// 1. If the source app isn't currently frontmost (e.g., user opened
+    ///    Settings between hotkey and Replace), activate it and *await*
+    ///    enough time for focus to settle. Doing the rest synchronously
+    ///    on the wrong app is the most common Replace failure.
+    /// 2. AX write-back via AXUIElementSetAttributeValue on the focused
+    ///    element. Direct, instant, no pasteboard hijack. Works in native
     ///    AX-cooperative text fields (Notes, Mail, TextEdit, Pages, Xcode).
-    /// 2. Pasteboard + ⌘V: classic fallback for apps where AX selectedText
-    ///    is read-only (most Electron / Chromium apps). Activates the
-    ///    source app first if it isn't frontmost.
-    func replaceCorrection(_ text: String) {
+    /// 3. Pasteboard + ⌘V fallback for apps where AX selectedText is
+    ///    read-only (most Electron / Chromium apps).
+    func replaceCorrection(_ text: String) async {
+        let currentFrontmost = NSWorkspace.shared.frontmostApplication
+        let needsActivation = lastSourceApp != nil
+            && lastSourceApp?.processIdentifier != currentFrontmost?.processIdentifier
+
+        if needsActivation, let app = lastSourceApp {
+            let activated = app.activate()
+            log.info("""
+                Replace: activating \(app.localizedName ?? "?", privacy: .public) \
+                (was \(currentFrontmost?.localizedName ?? "?", privacy: .public)) \
+                returned=\(activated, privacy: .public)
+                """)
+            // Wait for focus to actually shift. AX writes done before this
+            // settles would target the wrong element.
+            try? await Task.sleep(for: .milliseconds(220))
+        }
+
         if replaceViaAX(text: text) {
             log.info("Replace via AX write-back: \(text.count, privacy: .public) chars")
             return
         }
         log.info("Replace: AX write-back unavailable, using pasteboard + ⌘V")
-        replaceViaPasteboard(text: text)
+
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        let pbOK = pb.setString(text, forType: .string)
+        log.info("Replace pasteboard write: \(pbOK, privacy: .public)")
+
+        try? await Task.sleep(for: .milliseconds(80))
+        Self.simulateCommandV()
+        log.info("Replace ⌘V posted")
     }
 
     /// Try the AX-direct path. Returns true on success.
@@ -142,41 +168,6 @@ final class AppCoordinator {
             log.info("AX write-back: set failed (status=\(setStatus.rawValue, privacy: .public))")
         }
         return setStatus == .success
-    }
-
-    /// Pasteboard + ⌘V fallback. Only activates the source app if it isn't
-    /// already frontmost (the notch is `.nonactivatingPanel`, so in the
-    /// normal flow focus never left).
-    private func replaceViaPasteboard(text: String) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        let pbOK = pb.setString(text, forType: .string)
-
-        let currentFrontmost = NSWorkspace.shared.frontmostApplication
-        let needsActivation = lastSourceApp != nil
-            && lastSourceApp?.processIdentifier != currentFrontmost?.processIdentifier
-        let activated: Bool
-        if needsActivation, let app = lastSourceApp {
-            activated = app.activate()
-        } else {
-            activated = false
-        }
-
-        log.info("""
-            Replace pasteboard fallback: \
-            pbWritten=\(pbOK, privacy: .public) \
-            lastSource=\(self.lastSourceApp?.localizedName ?? "nil", privacy: .public) \
-            front=\(currentFrontmost?.localizedName ?? "nil", privacy: .public) \
-            needsActivation=\(needsActivation, privacy: .public) \
-            activated=\(activated, privacy: .public)
-            """)
-
-        let settleDelay: Duration = needsActivation ? .milliseconds(200) : .milliseconds(80)
-        Task {
-            try? await Task.sleep(for: settleDelay)
-            Self.simulateCommandV()
-            log.info("Replace pasteboard fallback: ⌘V posted")
-        }
     }
 
     /// Copy `text` to the clipboard without touching the source app.
