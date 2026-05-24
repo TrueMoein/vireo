@@ -37,7 +37,9 @@ actor WeaknessTracker {
     }
 
     /// Apply a user rating to one weakness item — updates the SM-2-style
-    /// scheduler state and persists.
+    /// scheduler state and persists. If the new interval crosses the
+    /// mastery threshold, demote the item to `.mastered` (it won't appear
+    /// in the active review queue anymore).
     func rate(itemId: Int64, grade: Grade, now: Date = Date()) async throws {
         try await database.queue.write { db in
             guard var item = try WeaknessItem.fetchOne(db, key: itemId) else { return }
@@ -54,10 +56,20 @@ actor WeaknessTracker {
             item.lapseCount = result.lapses
             item.lastReviewed = now
             item.reviewCount += 1
+
+            if item.state == .active && item.intervalDays >= Self.masteryIntervalDays {
+                item.state = .mastered
+                log.info("Mastered #\(itemId, privacy: .public) at interval \(item.intervalDays, privacy: .public)d")
+            } else {
+                log.info("Rated #\(itemId, privacy: .public) → next due in \(result.intervalDays, privacy: .public)d")
+            }
             try item.update(db)
-            log.info("Rated #\(itemId, privacy: .public) → next due in \(result.intervalDays, privacy: .public)d")
         }
     }
+
+    /// How long an active item must be scheduled out before it graduates
+    /// to .mastered. 30 days is a common SM-2/Anki cutoff for "learned."
+    static let masteryIntervalDays: Double = 30
 
     /// Update (or insert) one weakness item. Promotes from .watching to
     /// .active when the occurrence count crosses the threshold.

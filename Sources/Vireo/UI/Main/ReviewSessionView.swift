@@ -149,6 +149,8 @@ private struct ReviewCard: View {
     @State private var drill: Drill?
     @State private var drillError: String?
     @State private var revealed: Bool = false
+    @State private var guess: String = ""
+    @FocusState private var guessFocused: Bool
 
     var body: some View {
         ScrollView {
@@ -256,7 +258,7 @@ private struct ReviewCard: View {
 
     @ViewBuilder
     private func drillCard(_ drill: Drill) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("Practice")
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
@@ -269,10 +271,14 @@ private struct ReviewCard: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
+
+                guessResultRow(drill: drill)
+
                 Text(drill.context)
                     .font(.callout)
                     .foregroundStyle(.primary.opacity(0.82))
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
             } else {
                 Text(drill.blank)
                     .font(.system(.title3, design: .serif))
@@ -280,20 +286,82 @@ private struct ReviewCard: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                Button {
-                    revealed = true
-                } label: {
-                    Label("Reveal answer", systemImage: "eye.fill")
+
+                TextField("Type your answer or skip", text: $guess)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.large)
+                    .focused($guessFocused)
+                    .onSubmit { reveal() }
+                    .padding(.top, 4)
+
+                HStack(spacing: 8) {
+                    Button {
+                        reveal()
+                    } label: {
+                        Label(guess.isEmpty ? "Reveal answer" : "Check", systemImage: "eye.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.Vireo.correction)
+                    .controlSize(.regular)
+                    .keyboardShortcut(.return)
+
+                    if !guess.isEmpty {
+                        Button("Clear") { guess = "" }
+                            .buttonStyle(.bordered)
+                            .controlSize(.regular)
+                    }
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-                .padding(.top, 4)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onAppear { guessFocused = true }
+    }
+
+    private func reveal() {
+        withAnimation(.smooth(duration: 0.22)) {
+            revealed = true
+        }
+    }
+
+    @ViewBuilder
+    private func guessResultRow(drill: Drill) -> some View {
+        let normalize: (String) -> String = {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        let trimmedGuess = guess.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isCorrect = !trimmedGuess.isEmpty && normalize(trimmedGuess) == normalize(drill.answer)
+        let isSkipped = trimmedGuess.isEmpty
+
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("Your guess")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            if isSkipped {
+                Text("(skipped)")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                    .italic()
+            } else {
+                Text("\u{201C}\(trimmedGuess)\u{201D}")
+                    .font(.system(.callout, design: .monospaced))
+                    .foregroundStyle(isCorrect ? Color.Vireo.correction : Color.Vireo.mistake)
+                Image(systemName: isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(isCorrect ? Color.Vireo.correction : Color.Vireo.mistake)
+                if !isCorrect {
+                    Text("· correct: ")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    + Text("\u{201C}\(drill.answer)\u{201D}")
+                        .font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(Color.Vireo.correction)
+                }
+            }
+            Spacer()
+        }
     }
 
     /// Replace `___` in the drill's blank with the highlighted answer.
