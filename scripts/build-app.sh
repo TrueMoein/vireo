@@ -100,12 +100,23 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc sign with a stable identifier. The identifier is stable across
-# builds (always "co.vireo") even though the content hash isn't, so at least
-# the bundle identity reads consistently in Console and System Settings.
-codesign --force --deep --sign - \
-    --identifier "co.vireo" \
-    "$APP_BUNDLE" 2>&1 | sed 's/^/   /' || true
+# Prefer a self-signed "Vireo Dev" code-signing identity if the user
+# created one (Keychain Access → Certificate Assistant → Create a
+# Certificate → Self Signed Root → Code Signing). Stable signing
+# identity → potentially stable TCC trust across rebuilds. If absent,
+# ad-hoc with a fixed identifier so at least the bundle ID reads
+# consistently in Console + System Settings.
+if security find-identity -v -p codesigning 2>/dev/null | grep -q '"Vireo Dev"'; then
+    echo "→ Signing with self-signed \"Vireo Dev\" identity"
+    codesign --force --deep --sign "Vireo Dev" \
+        --identifier "co.vireo" \
+        "$APP_BUNDLE" 2>&1 | sed 's/^/   /' || true
+else
+    echo "→ Ad-hoc signing (Vireo Dev cert not found in Keychain)"
+    codesign --force --deep --sign - \
+        --identifier "co.vireo" \
+        "$APP_BUNDLE" 2>&1 | sed 's/^/   /' || true
+fi
 
 echo ""
 echo "✓ ${APP_BUNDLE}"
