@@ -125,7 +125,7 @@ struct OpenRouterAdapter: ProviderAdapter {
     }
 
     private static let drillSystemPrompt = """
-    You generate ONE fresh fill-in-the-blank English practice sentence for a Persian-L1 English learner who works as a software developer.
+    You generate ONE fresh fill-in-the-blank English practice sentence for an English learner who works as a knowledge worker (developer, designer, marketer, etc.).
 
     You will receive an English rule (and possibly a recent mistake illustrating it). Output a single drill sentence that exercises the same rule on different vocabulary.
 
@@ -140,7 +140,7 @@ struct OpenRouterAdapter: ProviderAdapter {
     - 8 to 15 words in the sentence
     - Use a topic / vocabulary DIFFERENT from any example shown
     - Exactly one blank, marked with three underscores ___
-    - Sentence should be natural English a developer or knowledge worker might write (work, code, meetings, deployments, docs)
+    - Sentence should be natural English a working professional might write (work, code, meetings, deployments, docs, marketing)
     - The "answer" field is the EXACT minimal text that fills the blank — no quotes, no surrounding context, no punctuation that isn't part of the answer
     """
 
@@ -203,7 +203,7 @@ struct OpenRouterAdapter: ProviderAdapter {
     }
 
     private static let systemPrompt = """
-    You are an English writing coach helping a Persian-L1 (native Farsi speaker) developer improve through deliberate practice. Your goal is to teach the underlying rule, not just patch the symptom.
+    You are an English writing coach helping a learner improve through deliberate practice. Your goal is to teach the underlying rule, not just patch the symptom.
 
     Given the user's text, return a JSON object with this exact shape and nothing else:
     {
@@ -212,7 +212,7 @@ struct OpenRouterAdapter: ProviderAdapter {
         {
           "original": "the exact original phrase that was wrong (copy verbatim from input, including surrounding context if needed)",
           "fixed": "the corrected phrase",
-          "category": "article|tense|preposition|agreement|word_order|vocab|spelling|punctuation|l1_interference|other",
+          "category": "article|tense|preposition|agreement|word_order|vocab|spelling|punctuation|other",
           "rule": "the underlying English rule in one short sentence",
           "explanation": "one or two sentences explaining the fix as if teaching a curious learner — no lecturing"
         }
@@ -225,14 +225,5 @@ struct OpenRouterAdapter: ProviderAdapter {
     - Preserve the user's voice. Do not rewrite for style if grammar is fine.
     - One distinct mistake per array entry; do not bundle multiple fixes into one.
     - Category strings must be snake_case from the list above.
-
-    Persian-L1 patterns to tag as "l1_interference" (not the generic category) when you spot them:
-    - Article omission before specific or countable singular nouns (Persian has no a/the).
-    - Confusion of "in/on/at" for time and place (Persian "dar" / "be" map to several English prepositions).
-    - Missing or misplaced auxiliary verbs ("do/does/did") in questions and negation (Persian uses inflection instead).
-    - Subject-verb agreement slips on 3rd-person singular -s (Persian conjugates by person ending, not by 3sg -s).
-    - Aspect / continuous confusion ("I working" vs "I am working") — Persian doesn't grammaticalize progressive aspect the same way.
-    - Word-order inversions in subordinate clauses (Persian SOV vs English SVO).
-    Tag these explicitly as "l1_interference" so the user's weakness profile picks up the L1-driven patterns; in the rule field, name both the English rule AND the L1 source (e.g., "English requires 'a/the' before singular countable nouns; Persian has no articles, so this is a common L1-interference slip").
     """
 }

@@ -224,7 +224,6 @@ struct PatternsView: View {
             case "vocab": return "character.book.closed"
             case "spelling": return "abc"
             case "punctuation": return "quote.opening"
-            case "l1_interference": return "globe"
             default: return "questionmark.circle"
             }
         }()
@@ -243,7 +242,6 @@ struct PatternsView: View {
         case "vocab": return "Vocabulary"
         case "spelling": return "Spelling"
         case "punctuation": return "Punctuation"
-        case "l1_interference": return "Persian → English (L1)"
         case "other": return "Other"
         default: return raw.replacingOccurrences(of: "_", with: " ").capitalized
         }

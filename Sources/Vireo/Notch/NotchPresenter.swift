@@ -10,7 +10,10 @@
 import AppKit
 import Combine
 import DynamicNotchKit
+import OSLog
 import SwiftUI
+
+private let log = Logger(subsystem: "co.vireo", category: "NotchPresenter")
 
 @MainActor
 final class NotchPresenter: ObservableObject {
@@ -34,6 +37,7 @@ final class NotchPresenter: ObservableObject {
 
     private var notch: DynamicNotch<ExpandedRouter, EmptyView, CompactBirdIcon>?
     private var hoverObserver: AnyCancellable?
+    private var activationObservers: Set<AnyCancellable> = []
     private var autoHideTask: Task<Void, Never>?
 
     init(settings: SettingsModel) {
@@ -66,6 +70,75 @@ final class NotchPresenter: ObservableObject {
                     await self?.handleHover(hovering)
                 }
             }
+
+        installActivationObservers()
+    }
+
+    /// Re-assert the notch panel's z-order. Call this after any action that
+    /// activates a different window (Settings, main, onboarding), after
+    /// `NSApp.activate(ignoringOtherApps:)`, or after a System Settings
+    /// round-trip (e.g., the AX-grant flow). The panel sits at
+    /// `.screenSaver` level, but macOS occasionally displaces it when an
+    /// `.accessory` app cycles activation state — re-ordering it front
+    /// restores it without changing levels or recreating the panel.
+    func reassertPanelVisibility() {
+        guard let window = notch?.windowController?.window else {
+            log.info("reassertPanelVisibility: no panel — re-creating")
+            // The whole DynamicNotch lost its window. Bounce through hide
+            // so the next compact() builds a fresh one.
+            Task { [weak self] in
+                guard let self else { return }
+                await self.notch?.hide()
+                try? await Task.sleep(for: .milliseconds(280))
+                await self.notch?.compact(on: Self.preferredScreen)
+            }
+            return
+        }
+        if !window.isVisible {
+            log.info("reassertPanelVisibility: panel was hidden — restoring")
+        }
+        window.orderFrontRegardless()
+    }
+
+    /// Observe app-level events that historically displace the notch
+    /// panel: app activation transitions and screen-parameter changes
+    /// (e.g., when System Settings opens for the AX grant flow).
+    ///
+    /// We deliberately do NOT observe window-key transitions: the notch
+    /// panel itself becomes key on hover, which would trigger spurious
+    /// re-assertions mid-expand and make hover flicker (the panel
+    /// resizes during the expand animation, and re-ordering during that
+    /// animation breaks the `.onHover` region in DynamicNotchKit).
+    ///
+    /// We also guard each callback so we only re-assert when the notch
+    /// is at rest (idle compact state) — never while the user is
+    /// actively engaging with a popover / correction / review / etc.
+    /// During those states the panel is by definition visible already,
+    /// and re-ordering it would race the in-flight animation.
+    private func installActivationObservers() {
+        let nc = NotificationCenter.default
+        let names: [Notification.Name] = [
+            NSApplication.didBecomeActiveNotification,
+            NSApplication.didResignActiveNotification,
+            NSApplication.didChangeScreenParametersNotification,
+        ]
+        for name in names {
+            nc.publisher(for: name)
+                .sink { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        // Don't disturb the panel during active interaction.
+                        guard self.model.display.isIdle else { return }
+                        // Tiny delay to let the OS finish its own ordering.
+                        try? await Task.sleep(for: .milliseconds(80))
+                        // Re-check after the delay — user may have started
+                        // hovering / opened a popover in the meantime.
+                        guard self.model.display.isIdle else { return }
+                        self.reassertPanelVisibility()
+                    }
+                }
+                .store(in: &activationObservers)
+        }
     }
 
     /// Push a correction into the notch. Stays expanded until the user

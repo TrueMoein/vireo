@@ -127,11 +127,8 @@ struct HistoryView: View {
             } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
-                        Text(session.timestamp, style: .relative)
+                        Text(session.timestamp.compactRelative())
                             .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                        Text("ago")
-                            .font(.caption)
                             .foregroundStyle(.secondary)
                         if let app = session.sourceApp {
                             Text("·")

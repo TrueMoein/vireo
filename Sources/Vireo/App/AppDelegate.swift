@@ -74,6 +74,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // Wire stores into the presenter so the rich popover can read them.
         presenter.sessionStore = self.sessionStore
         presenter.permission = self.permission
+        // Onboarding needs to re-assert the notch panel after it activates
+        // (same reason as NotchPopover.bringWindowForward — accessory apps
+        // can have their screensaver-level panels displaced on activation).
+        self.onboardingController.notchPresenter = presenter
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -99,5 +103,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 await coordinator.correctSelection()
             }
         }
+    }
+
+    /// Vireo's primary surface is the notch panel, which AppKit doesn't
+    /// count as a "window" for the auto-terminate check. Without this
+    /// override, closing Settings (or the main window) leaves AppKit
+    /// thinking there are no windows left and quits the whole app —
+    /// killing the notch with it. Returning false keeps Vireo alive
+    /// as long as the user hasn't explicitly chosen Quit.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 }

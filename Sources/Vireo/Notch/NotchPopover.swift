@@ -29,17 +29,25 @@ struct NotchPopover: View {
     var body: some View {
         VStack(spacing: 12) {
             header
-            if needsSetup {
-                setupCard
-            } else {
-                coachCard
-                if !sessionStore.sessions.isEmpty {
-                    recentCard
-                }
-                if !sessionStore.patterns.isEmpty {
-                    patternsCard
+            // Cards scroll if they overflow the panel height. On a tall
+            // screen with no overflow, scrollBounceBehavior keeps things
+            // still — no spurious rubber-band feel.
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 12) {
+                    if needsSetup {
+                        setupCard
+                    } else {
+                        coachCard
+                        if !sessionStore.sessions.isEmpty {
+                            recentCard
+                        }
+                        if !sessionStore.patterns.isEmpty {
+                            patternsCard
+                        }
+                    }
                 }
             }
+            .scrollBounceBehavior(.basedOnSize)
             footer
         }
         .padding(16)
@@ -227,11 +235,8 @@ struct NotchPopover: View {
     private func recentRow(_ session: Session) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                Text(session.timestamp, style: .relative)
+                Text(session.timestamp.compactRelative())
                     .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                Text("ago")
-                    .font(.caption2)
                     .foregroundStyle(.secondary)
                 if let app = session.sourceApp {
                     Text("· \(app)")
@@ -332,6 +337,7 @@ struct NotchPopover: View {
             .help("Quit Vireo ⌘Q")
         }
         .padding(.top, 2)
+        .padding(.bottom, 8)
     }
 
     // MARK: - Section card chrome
@@ -376,6 +382,13 @@ struct NotchPopover: View {
                 window.orderFrontRegardless()
             }
         }
+        // macOS occasionally displaces our screensaver-level panel when an
+        // .accessory app activates — re-assert it so the bird doesn't
+        // vanish behind the window we just brought forward.
+        Task { @MainActor [presenter] in
+            try? await Task.sleep(for: .milliseconds(80))
+            presenter.reassertPanelVisibility()
+        }
     }
 
     private func categoryIcon(for category: String) -> String {
@@ -388,7 +401,6 @@ struct NotchPopover: View {
         case "vocab": return "character.book.closed"
         case "spelling": return "abc"
         case "punctuation": return "quote.opening"
-        case "l1_interference": return "globe"
         default: return "questionmark.circle"
         }
     }
@@ -403,7 +415,6 @@ struct NotchPopover: View {
         case "vocab": return "Vocabulary"
         case "spelling": return "Spelling"
         case "punctuation": return "Punctuation"
-        case "l1_interference": return "Persian → English"
         case "other": return "Other"
         default: return raw.replacingOccurrences(of: "_", with: " ").capitalized
         }

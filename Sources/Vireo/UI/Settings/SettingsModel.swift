@@ -28,8 +28,7 @@ final class SettingsModel: ObservableObject {
     private let keychain = KeychainStore.shared
 
     init() {
-        let savedKey = keychain.read(account: Self.keychainAccount) ?? ""
-        apiKey = savedKey.isEmpty ? (Self.loadDevKeyFromDotenv() ?? "") : savedKey
+        apiKey = keychain.read(account: Self.keychainAccount) ?? ""
         model = UserDefaults.standard.string(forKey: Self.modelDefaultsKey) ?? Self.defaultModel
     }
 
@@ -81,34 +80,5 @@ final class SettingsModel: ObservableObject {
         } catch {
             testResult = .failure(error.localizedDescription)
         }
-    }
-
-    // Dev convenience: load OPENROUTER_API_KEY from `.env` in the repo root
-    // when Keychain is empty. Tries common paths so this works for both
-    // `swift run` (cwd is repo root) and Xcode (cwd is DerivedData).
-    // Production app bundles never see this file.
-    private static func loadDevKeyFromDotenv() -> String? {
-        if let v = ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"], !v.isEmpty {
-            return v
-        }
-        let candidates: [URL] = [
-            URL(fileURLWithPath: ".env"),
-            URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Projects/vireo/.env"),
-        ]
-        for url in candidates {
-            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            for raw in text.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) {
-                let line = raw.trimmingCharacters(in: .whitespaces)
-                guard !line.isEmpty, !line.hasPrefix("#") else { continue }
-                let prefix = "OPENROUTER_API_KEY="
-                if line.hasPrefix(prefix) {
-                    let value = String(line.dropFirst(prefix.count))
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-                    if !value.isEmpty { return value }
-                }
-            }
-        }
-        return nil
     }
 }

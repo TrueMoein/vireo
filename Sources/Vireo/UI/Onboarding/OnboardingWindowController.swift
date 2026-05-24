@@ -10,6 +10,11 @@ import SwiftUI
 final class OnboardingWindowController {
     let settings: SettingsModel
     let permission: AccessibilityPermission
+    /// Set by AppDelegate after both are constructed. Used to re-assert
+    /// the notch panel after we activate the onboarding window, since
+    /// `NSApp.activate(...)` can displace screensaver-level panels on an
+    /// .accessory app.
+    weak var notchPresenter: NotchPresenter?
 
     private var window: NSWindow?
     private var cancellable: AnyCancellable?
@@ -39,6 +44,14 @@ final class OnboardingWindowController {
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
         window.center()
+        // Re-assert the notch after we activate — same reason as
+        // NotchPopover.bringWindowForward.
+        if let presenter = notchPresenter {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(80))
+                presenter.reassertPanelVisibility()
+            }
+        }
     }
 
     private func close() {

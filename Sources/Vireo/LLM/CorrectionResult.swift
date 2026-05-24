@@ -30,11 +30,11 @@ extension CorrectionResult {
         case vocab
         case spelling
         case punctuation
-        case l1Interference = "l1_interference"
         case other
 
         /// Lenient decode so unknown categories from the model land in `.other`
-        /// rather than failing the whole correction.
+        /// rather than failing the whole correction. Old persisted rows tagged
+        /// `"l1_interference"` also fall through to `.other` here.
         init(from decoder: Decoder) throws {
             let raw = try decoder.singleValueContainer().decode(String.self)
             self = Category(rawValue: raw) ?? .other
