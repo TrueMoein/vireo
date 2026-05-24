@@ -82,6 +82,32 @@ final class Database: Sendable {
             }
         }
 
+        migrator.registerMigration("v2_weakness_items") { db in
+            try db.create(table: "weakness_item") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("category", .text).notNull().indexed()
+                t.column("rule", .text).notNull()
+                t.column("occurrence_count", .integer).notNull().defaults(to: 1)
+                t.column("first_seen", .double).notNull()
+                t.column("last_seen", .double).notNull()
+                // state: 0 = watching (under threshold), 1 = active (in review), 2 = mastered.
+                t.column("state", .integer).notNull().defaults(to: 0).indexed()
+                // SM-2-inspired scheduler fields (FSRS-6 swap is a v2 refinement
+                // once swift-fsrs exposes its scheduling API publicly).
+                t.column("ease", .double).notNull().defaults(to: 2.5)
+                t.column("interval_days", .double).notNull().defaults(to: 0)
+                t.column("due_at", .double)
+                t.column("last_reviewed", .double)
+                t.column("review_count", .integer).notNull().defaults(to: 0)
+                t.column("lapse_count", .integer).notNull().defaults(to: 0)
+            }
+            try db.create(
+                indexOn: "weakness_item",
+                columns: ["category", "rule"],
+                options: [.unique]
+            )
+        }
+
         return migrator
     }
 }

@@ -15,13 +15,51 @@ struct PatternsTab: View {
             } else if store.patterns.isEmpty {
                 emptyState
             } else {
-                introBanner
+                coachSummary
                 Divider()
                 patternsList
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { Task { await store.reloadPatterns() } }
+    }
+
+    private var coachSummary: some View {
+        let s = store.weaknessSummary
+        return HStack(spacing: 14) {
+            summaryStat(label: "Active", value: s.active, color: Color.Vireo.correction)
+            Divider().frame(height: 36)
+            summaryStat(label: "Due now", value: s.dueNow, color: s.dueNow > 0 ? Color.Vireo.accent : .secondary)
+            Divider().frame(height: 36)
+            summaryStat(label: "Watching", value: s.watching, color: .secondary)
+            Divider().frame(height: 36)
+            summaryStat(label: "Mastered", value: s.mastered, color: .secondary)
+            Spacer()
+            Button {
+                // Review session UI lands in the next stage.
+            } label: {
+                Label("Start review", systemImage: "play.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.Vireo.correction)
+            .disabled(s.dueNow == 0)
+            .help(s.dueNow == 0 ? "No items are due for review yet — keep using Vireo." : "Coming in the next stage")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
+    private func summaryStat(label: String, value: Int, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(value)")
+                .font(.system(.title2, design: .rounded).weight(.semibold))
+                .foregroundStyle(color)
+                .monospacedDigit()
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+        }
     }
 
     // MARK: - States

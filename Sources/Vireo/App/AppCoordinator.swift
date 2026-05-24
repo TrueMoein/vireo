@@ -17,6 +17,7 @@ final class AppCoordinator {
     let settings: SettingsModel
     let notch: NotchPresenter
     let sessionRepository: SessionRepository?
+    let weaknessTracker: WeaknessTracker?
     /// Weak so we can call reload() after each save without a retain cycle.
     weak var sessionStore: SessionStore?
 
@@ -26,11 +27,13 @@ final class AppCoordinator {
     init(
         settings: SettingsModel,
         notch: NotchPresenter,
-        sessionRepository: SessionRepository? = nil
+        sessionRepository: SessionRepository? = nil,
+        weaknessTracker: WeaknessTracker? = nil
     ) {
         self.settings = settings
         self.notch = notch
         self.sessionRepository = sessionRepository
+        self.weaknessTracker = weaknessTracker
     }
 
     // MARK: - Correct selection
@@ -91,9 +94,38 @@ final class AppCoordinator {
         await notch.showBusy("Asking \(trimmedModel)")
 
         let adapter = OpenRouterAdapter(apiKey: trimmedKey, model: trimmedModel)
+        let started = ContinuousClock.now
         do {
             let result = try await adapter.correct(text)
+            let elapsed = started.duration(to: .now)
+            let elapsedMs = Int(elapsed.components.seconds) * 1000
+                + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
             await notch.showCorrection(result)
+
+            // Best-effort persistence + weakness tracking — never block the
+            // user-facing flow on it.
+            if let repo = sessionRepository {
+                let appName = lastSourceApp?.localizedName
+                let modelName = trimmedModel
+                let store = sessionStore
+                let tracker = weaknessTracker
+                Task.detached {
+                    do {
+                        try await repo.save(
+                            rawText: text,
+                            result: result,
+                            sourceApp: appName,
+                            model: modelName,
+                            latencyMs: elapsedMs
+                        )
+                        try await tracker?.ingest(result: result)
+                        await store?.reload()
+                        log.info("Persisted session + ingested \(result.mistakes.count, privacy: .public) mistakes")
+                    } catch {
+                        log.error("Persist session failed: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+            }
         } catch {
             await notch.showMessage(
                 NotchMessage(

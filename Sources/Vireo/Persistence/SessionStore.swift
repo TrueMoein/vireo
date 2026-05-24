@@ -11,6 +11,7 @@ private let log = Logger(subsystem: "co.vireo", category: "SessionStore")
 final class SessionStore: ObservableObject {
     @Published private(set) var sessions: [Session] = []
     @Published private(set) var patterns: [CategoryPattern] = []
+    @Published private(set) var weaknessSummary: WeaknessSummary = WeaknessSummary(active: 0, watching: 0, mastered: 0, dueNow: 0)
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var totalCount: Int = 0
 
@@ -37,17 +38,19 @@ final class SessionStore: ObservableObject {
                 : try await repository.search(search)
             totalCount = try await repository.totalSessionCount()
             patterns = try await repository.categoryPatterns()
+            weaknessSummary = try await repository.weaknessSummary()
         } catch {
             log.error("reload failed: \(error.localizedDescription, privacy: .public)")
             sessions = []
         }
     }
 
-    /// Refresh only the patterns (e.g., on PatternsTab appearance).
+    /// Refresh only the patterns + weakness summary (PatternsTab appearance).
     func reloadPatterns() async {
         guard let repository else { return }
         do {
             patterns = try await repository.categoryPatterns()
+            weaknessSummary = try await repository.weaknessSummary()
         } catch {
             log.error("reloadPatterns failed: \(error.localizedDescription, privacy: .public)")
         }

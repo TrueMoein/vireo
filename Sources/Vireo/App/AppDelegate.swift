@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let hoverButton: HoverButtonController
     let database: Database?
     let sessionRepository: SessionRepository?
+    let weaknessTracker: WeaknessTracker?
     let sessionStore: SessionStore
 
     override init() {
@@ -31,7 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
         self.database = database
         let repo = database.map(SessionRepository.init)
+        let tracker = database.map(WeaknessTracker.init)
         self.sessionRepository = repo
+        self.weaknessTracker = tracker
         // SessionStore is always non-nil; it carries an `unavailable` flag
         // for the History tab to render a clean error state if the DB
         // failed to open.
@@ -41,7 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         let coordinator = AppCoordinator(
             settings: settings,
             notch: presenter,
-            sessionRepository: repo
+            sessionRepository: repo,
+            weaknessTracker: tracker
         )
         let focusObserver = FocusObserver()
         let hoverButton = HoverButtonController(coordinator: coordinator, focus: focusObserver)

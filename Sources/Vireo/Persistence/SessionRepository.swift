@@ -133,9 +133,59 @@ actor SessionRepository {
         .sorted { $0.totalCount > $1.totalCount }
     }
 
+    // MARK: - Weakness items
+
+    /// All weakness items, grouped by state and sorted by recurrence.
+    func weaknessItems() async throws -> [WeaknessItem] {
+        try await database.queue.read { db in
+            try WeaknessItem
+                .order(Column("occurrence_count").desc, Column("last_seen").desc)
+                .fetchAll(db)
+        }
+    }
+
+    /// Active items whose due_at has passed.
+    func dueWeaknessItems(now: Date = Date()) async throws -> [WeaknessItem] {
+        try await database.queue.read { db in
+            try WeaknessItem
+                .filter(Column("state") == WeaknessState.active.rawValue)
+                .filter(Column("due_at") != nil && Column("due_at") <= now.timeIntervalSinceReferenceDate)
+                .order(Column("due_at"))
+                .fetchAll(db)
+        }
+    }
+
+    /// Counts for the Coach summary card: total active, due now, watching.
+    func weaknessSummary(now: Date = Date()) async throws -> WeaknessSummary {
+        try await database.queue.read { db in
+            let active = try WeaknessItem
+                .filter(Column("state") == WeaknessState.active.rawValue)
+                .fetchCount(db)
+            let watching = try WeaknessItem
+                .filter(Column("state") == WeaknessState.watching.rawValue)
+                .fetchCount(db)
+            let mastered = try WeaknessItem
+                .filter(Column("state") == WeaknessState.mastered.rawValue)
+                .fetchCount(db)
+            let due = try WeaknessItem
+                .filter(Column("state") == WeaknessState.active.rawValue)
+                .filter(Column("due_at") != nil && Column("due_at") <= now.timeIntervalSinceReferenceDate)
+                .fetchCount(db)
+            return WeaknessSummary(active: active, watching: watching, mastered: mastered, dueNow: due)
+        }
+    }
+
     enum RepositoryError: Error {
         case insertFailed
     }
+}
+
+/// Coach summary surfaced on the Patterns tab.
+struct WeaknessSummary: Sendable, Hashable {
+    let active: Int
+    let watching: Int
+    let mastered: Int
+    let dueNow: Int
 }
 
 /// One mistake category with its recurring rules, ranked by recurrence.

@@ -1,9 +1,81 @@
-// WeaknessTracker.swift — promotes recurring mistakes to weakness items.
+// WeaknessTracker.swift — incremental tracker that consumes correction
+// results and updates the weakness_item table.
 //
-// Rule: a (category, rule) tuple seen ≥ 3 times in distinct sessions becomes
-// an active WeaknessItem and enters the FSRS review queue. 30 correct uses
-// of the corrected form in real writing demotes it to "passive."
-//
-// TODO: implement in Phase 5.
+// For each mistake in a correction:
+//   1. Find-or-insert weakness_item by (category, rule).
+//   2. Increment occurrence_count, update last_seen.
+//   3. If count crosses the promotion threshold, promote to .active and
+//      initialize scheduler state (ease, interval, due_at).
 
 import Foundation
+import GRDB
+import OSLog
+
+private let log = Logger(subsystem: "co.vireo", category: "WeaknessTracker")
+
+actor WeaknessTracker {
+    private let database: Database
+
+    init(database: Database) {
+        self.database = database
+    }
+
+    /// Process all mistakes from a correction result, updating or inserting
+    /// weakness items as needed. Idempotent per call: callers should pass
+    /// each result exactly once.
+    func ingest(result: CorrectionResult) async throws {
+        guard !result.mistakes.isEmpty else { return }
+        try await database.queue.write { db in
+            for m in result.mistakes {
+                try Self.upsert(
+                    db: db,
+                    category: m.category.rawValue,
+                    rule: m.rule
+                )
+            }
+        }
+    }
+
+    /// Update (or insert) one weakness item. Promotes from .watching to
+    /// .active when the occurrence count crosses the threshold.
+    private static func upsert(db: GRDB.Database, category: String, rule: String) throws {
+        let now = Date()
+
+        let existing = try WeaknessItem
+            .filter(Column("category") == category && Column("rule") == rule)
+            .fetchOne(db)
+
+        if var item = existing {
+            item.occurrenceCount += 1
+            item.lastSeen = now
+
+            // Promote if we just crossed the threshold and are still .watching.
+            if item.state == .watching, item.occurrenceCount >= WeaknessItem.promotionThreshold {
+                item.state = .active
+                let s = SpacedRepetition.initialState(now: now)
+                item.ease = s.ease
+                item.intervalDays = s.intervalDays
+                item.dueAt = s.dueAt
+                log.info("Promoted weakness: \(category, privacy: .public) · \(rule.prefix(60), privacy: .public)")
+            }
+            try item.update(db)
+        } else {
+            var item = WeaknessItem(
+                id: nil,
+                category: category,
+                rule: rule,
+                occurrenceCount: 1,
+                firstSeen: now,
+                lastSeen: now,
+                state: .watching,
+                ease: 2.5,
+                intervalDays: 0,
+                dueAt: nil,
+                lastReviewed: nil,
+                reviewCount: 0,
+                lapseCount: 0
+            )
+            try item.insert(db)
+        }
+    }
+}
