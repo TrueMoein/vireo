@@ -83,6 +83,18 @@ struct ProviderTab: View {
                 }
             }
 
+            Section("Output") {
+                Toggle(isOn: $settings.streamingEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Stream the corrected text as it's generated")
+                        Text("Makes the correction appear word-by-word in the notch instead of all at once. Turn off if your provider doesn't stream reliably.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
             Section("Test connection") {
                 HStack {
                     Button(isRunning ? "Testing…" : "Run test") {

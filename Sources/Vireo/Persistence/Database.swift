@@ -108,6 +108,15 @@ final class Database: Sendable {
             )
         }
 
+        migrator.registerMigration("v3_session_style") { db in
+            try db.alter(table: "session") { t in
+                // Stores `CorrectionStyle.id.uuidString` so History rows
+                // can show which style produced each correction. Nullable
+                // because pre-v3 rows were written without one.
+                t.add(column: "style_id", .text)
+            }
+        }
+
         return migrator
     }
 }

@@ -20,9 +20,31 @@ final class AppCoordinator {
     let weaknessTracker: WeaknessTracker?
     /// Weak so we can call reload() after each save without a retain cycle.
     weak var sessionStore: SessionStore?
+    /// Set by AppDelegate so ExpandedRouter can reach the drill generator
+    /// when showing notch-resident review cards.
+    weak var drillGenerator: DrillGenerator?
+    /// Style store — used to resolve the active style's system prompt.
+    /// Set by AppDelegate after construction.
+    weak var styleStore: CorrectionStyleStore?
 
     private let resolver = SelectedTextResolver()
     private var lastSourceApp: NSRunningApplication?
+    /// Handle to the in-flight correction task so the streaming card's
+    /// Cancel button (and notch dismissal) can abort the network read.
+    private var currentCorrectionTask: Task<Void, Never>?
+    /// Where the current correction came from. Used by `replaceCorrection`
+    /// to pick AX-writeback (selection-based flows) vs pure clipboard
+    /// semantics (clipboard monitor flow).
+    private var lastTriggerSource: TriggerSource = .selection
+
+    enum TriggerSource {
+        /// Hotkey, hover button, double-shift — we have a source app
+        /// with focused text we should replace.
+        case selection
+        /// Clipboard monitor — no source app context; Replace just puts
+        /// the corrected text on the clipboard.
+        case clipboard
+    }
 
     init(
         settings: SettingsModel,
@@ -42,25 +64,7 @@ final class AppCoordinator {
         // Capture the source app *before* we present our own UI so Replace
         // can route the paste back to it later.
         lastSourceApp = NSWorkspace.shared.frontmostApplication
-
-        let trimmedKey = settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedKey.isEmpty else {
-            await notch.showMessage(
-                NotchMessage(
-                    icon: "key.fill",
-                    title: "No API key set",
-                    detail: "Open Settings and paste your OpenRouter key.",
-                    tone: .warning
-                )
-            )
-            return
-        }
-
-        let trimmedModel = settings.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedModel.isEmpty else {
-            await notch.showMessage(.warning("No model selected"))
-            return
-        }
+        lastTriggerSource = .selection
 
         let text: String
         do {
@@ -91,68 +95,159 @@ final class AppCoordinator {
             return
         }
 
-        await notch.showBusy("Asking \(trimmedModel)")
+        await correct(text: text, styleID: nil)
+    }
 
-        let adapter = OpenRouterAdapter(apiKey: trimmedKey, model: trimmedModel)
-        let started = ContinuousClock.now
-        do {
-            let result = try await adapter.correct(text)
-            let elapsed = started.duration(to: .now)
-            let elapsedMs = Int(elapsed.components.seconds) * 1000
-                + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
-            await notch.showCorrection(result)
+    /// Entrypoint from `ClipboardMonitor`. Text is already on the
+    /// clipboard, so `lastSourceApp` is irrelevant for replace; we just
+    /// remember it was clipboard-triggered and run the same pipeline.
+    func correctFromClipboard(text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        lastSourceApp = nil
+        lastTriggerSource = .clipboard
+        await correct(text: trimmed, styleID: nil)
+    }
 
-            // Best-effort persistence + weakness tracking — never block the
-            // user-facing flow on it.
-            if let repo = sessionRepository {
-                let appName = lastSourceApp?.localizedName
-                let modelName = trimmedModel
-                let store = sessionStore
-                let tracker = weaknessTracker
-                Task.detached {
-                    do {
-                        try await repo.save(
-                            rawText: text,
-                            result: result,
-                            sourceApp: appName,
-                            model: modelName,
-                            latencyMs: elapsedMs
-                        )
-                        try await tracker?.ingest(result: result)
-                        await store?.reload()
-                        log.info("Persisted session + ingested \(result.mistakes.count, privacy: .public) mistakes")
-                    } catch {
-                        log.error("Persist session failed: \(error.localizedDescription, privacy: .public)")
-                    }
-                }
-            }
-        } catch {
+    /// Pipeline entrypoint used by both the hotkey/hover-button flow
+    /// (after text resolution) and the notch chip's "re-run with another
+    /// style" path. `styleID == nil` means use the currently active
+    /// style from the store.
+    func correct(text: String, styleID: UUID?) async {
+        let trimmedKey = settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else {
             await notch.showMessage(
                 NotchMessage(
-                    icon: "exclamationmark.octagon.fill",
-                    title: "Couldn't get correction",
-                    detail: error.localizedDescription,
-                    tone: .error
+                    icon: "key.fill",
+                    title: "No API key set",
+                    detail: "Open Settings and paste your OpenRouter key.",
+                    tone: .warning
                 )
             )
+            return
         }
+
+        let trimmedModel = settings.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else {
+            await notch.showMessage(.warning("No model selected"))
+            return
+        }
+
+        // Resolve the style to use: explicit param wins, else the
+        // store's active style, else Grammar Coach.
+        let resolvedStyle: CorrectionStyle
+        if let store = styleStore {
+            resolvedStyle = store.resolve(id: styleID ?? store.activeStyleID)
+        } else {
+            resolvedStyle = CorrectionStyle.grammarCoach
+        }
+
+        let adapter = OpenRouterAdapter(
+            apiKey: trimmedKey,
+            model: trimmedModel,
+            systemPrompt: resolvedStyle.wrappedPrompt
+        )
+
+        let useStreaming = settings.streamingEnabled
+        if useStreaming {
+            await notch.showStreaming()
+        } else {
+            await notch.showBusy("Asking \(trimmedModel)")
+        }
+
+        // Cancel any prior in-flight task before kicking off this one.
+        currentCorrectionTask?.cancel()
+        let task = Task { [weak self, notch] in
+            guard let self else { return }
+            let started = ContinuousClock.now
+            do {
+                var result: CorrectionResult
+                if useStreaming {
+                    result = try await adapter.correctStreaming(text) { @MainActor partial in
+                        // Updates the notch model in-place; no panel re-init.
+                        notch.updateStreaming(partial: partial)
+                    }
+                } else {
+                    result = try await adapter.correct(text)
+                }
+                try Task.checkCancellation()
+                result.styleID = resolvedStyle.id
+                let elapsed = started.duration(to: .now)
+                let elapsedMs = Int(elapsed.components.seconds) * 1000
+                    + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
+                await notch.showCorrection(result)
+
+                // Best-effort persistence + weakness tracking — never block the
+                // user-facing flow on it.
+                if let repo = self.sessionRepository {
+                    let appName = self.lastSourceApp?.localizedName
+                    let modelName = trimmedModel
+                    let store = self.sessionStore
+                    let tracker = self.weaknessTracker
+                    Task.detached {
+                        do {
+                            try await repo.save(
+                                rawText: text,
+                                result: result,
+                                sourceApp: appName,
+                                model: modelName,
+                                latencyMs: elapsedMs
+                            )
+                            try await tracker?.ingest(result: result)
+                            await store?.reload()
+                            log.info("Persisted session + ingested \(result.mistakes.count, privacy: .public) mistakes")
+                        } catch {
+                            log.error("Persist session failed: \(error.localizedDescription, privacy: .public)")
+                        }
+                    }
+                }
+            } catch is CancellationError {
+                // User dismissed the streaming card; nothing to surface.
+                log.info("Correction cancelled mid-flight")
+            } catch {
+                await notch.showMessage(
+                    NotchMessage(
+                        icon: "exclamationmark.octagon.fill",
+                        title: "Couldn't get correction",
+                        detail: error.localizedDescription,
+                        tone: .error
+                    )
+                )
+            }
+        }
+        currentCorrectionTask = task
+        await task.value
+    }
+
+    /// Abort the in-flight correction (if any). Called by the streaming
+    /// card's Cancel button and on notch dismissal during streaming.
+    func cancelInflightCorrection() {
+        currentCorrectionTask?.cancel()
+        currentCorrectionTask = nil
     }
 
     // MARK: - Post-correction actions
 
     /// Replace the current selection in the source app with `text`.
     ///
-    /// Strategy (in order):
-    /// 1. If the source app isn't currently frontmost (e.g., user opened
-    ///    Settings between hotkey and Replace), activate it and *await*
-    ///    enough time for focus to settle. Doing the rest synchronously
-    ///    on the wrong app is the most common Replace failure.
-    /// 2. AX write-back via AXUIElementSetAttributeValue on the focused
-    ///    element. Direct, instant, no pasteboard hijack. Works in native
-    ///    AX-cooperative text fields (Notes, Mail, TextEdit, Pages, Xcode).
-    /// 3. Pasteboard + ⌘V fallback for apps where AX selectedText is
-    ///    read-only (most Electron / Chromium apps).
+    /// Two paths depending on trigger source:
+    ///   • `.selection` — AX write-back into the focused element, with
+    ///     pasteboard + ⌘V fallback for Electron / Chromium apps. The
+    ///     source app is activated first if it isn't frontmost.
+    ///   • `.clipboard` — the user copied text; the corrected text just
+    ///     goes back onto the clipboard so their next paste uses it.
+    ///     No AX writeback, no ⌘V synthesis — too easy to paste into
+    ///     the wrong window.
     func replaceCorrection(_ text: String) async {
+        if lastTriggerSource == .clipboard {
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(text, forType: .string)
+            log.info("Replace (clipboard trigger): wrote \(text.count, privacy: .public) chars back to pasteboard")
+            await showReplaceToast(detail: "Corrected text is on your clipboard.")
+            return
+        }
+
         let currentFrontmost = NSWorkspace.shared.frontmostApplication
         let needsActivation = lastSourceApp != nil
             && lastSourceApp?.processIdentifier != currentFrontmost?.processIdentifier
@@ -169,8 +264,11 @@ final class AppCoordinator {
             try? await Task.sleep(for: .milliseconds(220))
         }
 
+        let appName = lastSourceApp?.localizedName ?? "the source app"
+
         if replaceViaAX(text: text) {
             log.info("Replace via AX write-back: \(text.count, privacy: .public) chars")
+            await showReplaceToast(detail: "Replaced text in \(appName).")
             return
         }
         log.info("Replace: AX write-back unavailable, using pasteboard + ⌘V")
@@ -183,6 +281,22 @@ final class AppCoordinator {
         try? await Task.sleep(for: .milliseconds(80))
         Self.simulateCommandV()
         log.info("Replace ⌘V posted")
+        await showReplaceToast(detail: "Pasted into \(appName).")
+    }
+
+    /// Brief 2s success toast shown after Replace fires. Triggers an
+    /// auto-hide back to compact rather than slamming the notch shut —
+    /// gives the user a frame of confirmation that the action worked.
+    private func showReplaceToast(detail: String) async {
+        await notch.showMessage(
+            NotchMessage(
+                icon: "checkmark.seal.fill",
+                title: "Replaced",
+                detail: detail,
+                tone: .info
+            ),
+            autoHideAfter: .seconds(2)
+        )
     }
 
     /// Try the AX-direct path. Returns true on success.

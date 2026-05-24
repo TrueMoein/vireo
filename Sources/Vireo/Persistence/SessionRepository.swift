@@ -37,7 +37,8 @@ actor SessionRepository {
                 correctedText: result.correctedText,
                 llmProvider: "openrouter",
                 model: model,
-                latencyMs: latencyMs
+                latencyMs: latencyMs,
+                styleId: result.styleID?.uuidString
             )
             try session.insert(db)
             guard let sessionId = session.id else {
@@ -81,6 +82,17 @@ actor SessionRepository {
                 .order(Column("timestamp").desc)
                 .limit(limit)
                 .fetchAll(db)
+        }
+    }
+
+    /// Delete one session. Cascades to its mistake rows via the FK in
+    /// the v1 schema. No-op if the row is already gone.
+    func deleteSession(id: Int64) async throws {
+        try await database.queue.write { db in
+            let count = try Session
+                .filter(Column("id") == id)
+                .deleteAll(db)
+            log.info("Deleted session #\(id, privacy: .public) (\(count, privacy: .public) row\(count == 1 ? "" : "s"))")
         }
     }
 

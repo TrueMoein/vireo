@@ -10,6 +10,20 @@ import Foundation
 struct CorrectionResult: Codable, Sendable {
     let correctedText: String
     let mistakes: [Mistake]
+    /// The user's original text. NOT from the LLM — adapters populate
+    /// this after decoding so downstream UI (the notch correction card)
+    /// can render a word-level diff. Defaults to empty so callers that
+    /// reconstruct the result from persistence don't have to bother.
+    var originalText: String = ""
+    /// The correction style that produced this result. Populated by the
+    /// coordinator/adapter post-decode. Nil for results reconstructed
+    /// from persistence (we don't store style IDs in the DB yet).
+    var styleID: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case correctedText
+        case mistakes
+    }
 }
 
 extension CorrectionResult {

@@ -9,18 +9,21 @@ final class OnboardingState: ObservableObject {
 
     let settings: SettingsModel
     let permission: AccessibilityPermission
+    let styleStore: CorrectionStyleStore
 
     static let defaultsKey = "co.vireo.hasOnboarded"
 
-    init(settings: SettingsModel, permission: AccessibilityPermission) {
+    init(settings: SettingsModel, permission: AccessibilityPermission, styleStore: CorrectionStyleStore) {
         self.settings = settings
         self.permission = permission
+        self.styleStore = styleStore
     }
 
     enum Step: Int, CaseIterable, Hashable {
         case welcome = 0
         case apiKey
         case accessibility
+        case style
         case ready
 
         var title: String {
@@ -28,6 +31,7 @@ final class OnboardingState: ObservableObject {
             case .welcome: return "Welcome"
             case .apiKey: return "API key"
             case .accessibility: return "Permission"
+            case .style: return "Style"
             case .ready: return "Ready"
             }
         }

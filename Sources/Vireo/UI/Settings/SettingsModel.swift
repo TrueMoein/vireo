@@ -11,6 +11,9 @@ final class SettingsModel: ObservableObject {
     @Published var model: String = SettingsModel.defaultModel {
         didSet { persistModel() }
     }
+    @Published var streamingEnabled: Bool = true {
+        didSet { persistStreamingEnabled() }
+    }
     @Published var testResult: TestResult = .idle
 
     enum TestResult {
@@ -25,11 +28,16 @@ final class SettingsModel: ObservableObject {
     static let testSentence = "I want create new feature for app, but I dont know if my boss agree with it."
 
     private static let modelDefaultsKey = "co.vireo.selectedModel"
+    private static let streamingDefaultsKey = "co.vireo.streamingEnabled"
     private let keychain = KeychainStore.shared
 
     init() {
         apiKey = keychain.read(account: Self.keychainAccount) ?? ""
         model = UserDefaults.standard.string(forKey: Self.modelDefaultsKey) ?? Self.defaultModel
+        // Default to on; respect an explicit user toggle if present.
+        if UserDefaults.standard.object(forKey: Self.streamingDefaultsKey) != nil {
+            streamingEnabled = UserDefaults.standard.bool(forKey: Self.streamingDefaultsKey)
+        }
     }
 
     var hasAPIKey: Bool {
@@ -54,6 +62,10 @@ final class SettingsModel: ObservableObject {
 
     private func persistModel() {
         UserDefaults.standard.set(model, forKey: Self.modelDefaultsKey)
+    }
+
+    private func persistStreamingEnabled() {
+        UserDefaults.standard.set(streamingEnabled, forKey: Self.streamingDefaultsKey)
     }
 
     /// Persist current key/model, then send a sample sentence through the

@@ -14,6 +14,8 @@ final class NotchModel: ObservableObject {
         case busy(String)
         case message(NotchMessage)
         case firstLaunch
+        case review(NotchReviewPayload)
+        case streamingCorrection(partial: String)
 
         var isIdle: Bool { if case .idle = self { return true } else { return false } }
         var isPopover: Bool { if case .popover = self { return true } else { return false } }
@@ -21,17 +23,26 @@ final class NotchModel: ObservableObject {
         var isBusy: Bool { if case .busy = self { return true } else { return false } }
         var isMessage: Bool { if case .message = self { return true } else { return false } }
         var isFirstLaunch: Bool { if case .firstLaunch = self { return true } else { return false } }
+        var isReview: Bool { if case .review = self { return true } else { return false } }
+        var isStreaming: Bool { if case .streamingCorrection = self { return true } else { return false } }
 
         /// True for any state where hover-to-popover transitions should be
         /// suppressed (we don't want a hover to wipe out an in-progress
         /// correction, an error message, or the first-launch wow moment).
         var locksHover: Bool {
             switch self {
-            case .correction, .busy, .message, .firstLaunch: return true
-            case .idle, .popover: return false
+            case .correction, .busy, .message, .firstLaunch, .review, .streamingCorrection:
+                return true
+            case .idle, .popover:
+                return false
             }
         }
     }
+}
+
+struct NotchReviewPayload: Sendable, Hashable {
+    let item: WeaknessItem
+    let example: Mistake?
 }
 
 struct NotchMessage: Sendable {

@@ -19,6 +19,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let sessionStore: SessionStore
     let drillGenerator: DrillGenerator
     let onboardingController: OnboardingWindowController
+    let idleCoach: IdleCoach
+    let styleStore: CorrectionStyleStore
+    let doubleShift: ShiftDoubleTapMonitor
+    let clipboardMonitor: ClipboardMonitor
 
     override init() {
         let settings = SettingsModel()
@@ -42,9 +46,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // failed to open.
         self.sessionStore = SessionStore(repository: repo, weaknessTracker: tracker)
         self.drillGenerator = DrillGenerator(settings: settings)
+        let styleStore = CorrectionStyleStore()
         self.onboardingController = OnboardingWindowController(
             settings: settings,
-            permission: AccessibilityPermission()
+            permission: AccessibilityPermission(),
+            styleStore: styleStore
         )
 
         let presenter = NotchPresenter(settings: settings)
@@ -63,6 +69,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         self.permission = AccessibilityPermission()
         self.focusObserver = focusObserver
         self.hoverButton = hoverButton
+        // IdleCoach surfaces a single drill into the notch when the user
+        // is idle. Started in applicationDidFinishLaunching.
+        self.idleCoach = IdleCoach(
+            settings: settings,
+            repository: repo,
+            presenter: presenter
+        )
+        self.styleStore = styleStore
+        // Closures referencing `coordinator` need to be wired after
+        // super.init. We seed the monitor with a placeholder that flips
+        // on the wired coordinator below.
+        self.doubleShift = ShiftDoubleTapMonitor(onDoubleTap: { [weak coordinator] in
+            Task { @MainActor in
+                await coordinator?.correctSelection()
+            }
+        })
+        self.clipboardMonitor = ClipboardMonitor(coordinator: coordinator)
         super.init()
         // Break the retain cycle: coordinator strongly holds presenter via
         // its notch field; presenter holds coordinator weakly for action
@@ -74,16 +97,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // Wire stores into the presenter so the rich popover can read them.
         presenter.sessionStore = self.sessionStore
         presenter.permission = self.permission
+        presenter.styleStore = self.styleStore
         // Onboarding needs to re-assert the notch panel after it activates
         // (same reason as NotchPopover.bringWindowForward — accessory apps
         // can have their screensaver-level panels displaced on activation).
         self.onboardingController.notchPresenter = presenter
+        // Expose the drill generator on the coordinator so the notch
+        // expanded router can build NotchReviewCard for ambient drills.
+        coordinator.drillGenerator = self.drillGenerator
+        // Style store enables active-style resolution + the "switch
+        // style on the notch correction card" re-run flow.
+        coordinator.styleStore = self.styleStore
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         notchPresenter.start()
         registerHotkeys()
+        idleCoach.start()
+        doubleShift.start()
+        clipboardMonitor.start()
+        // Expose the coordinator to in-process intent invocations so the
+        // Shortcuts.app intent can surface its correction in the notch.
+        VireoIntentBridge.coordinator = coordinator
 
         // First launch: show the proper onboarding wizard. Subsequent
         // launches show nothing (the wizard's hasOnboarded flag gates

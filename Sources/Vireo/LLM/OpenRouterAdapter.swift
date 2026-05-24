@@ -14,6 +14,16 @@ import Foundation
 struct OpenRouterAdapter: ProviderAdapter {
     let apiKey: String
     let model: String
+    /// The system prompt sent on every `correct(_:)` call. Defaults to
+    /// the Grammar Coach prompt so existing call sites keep working
+    /// without modification.
+    let systemPrompt: String
+
+    init(apiKey: String, model: String, systemPrompt: String = OpenRouterAdapter.systemPrompt) {
+        self.apiKey = apiKey
+        self.model = model
+        self.systemPrompt = systemPrompt
+    }
 
     private static let endpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
 
@@ -22,14 +32,14 @@ struct OpenRouterAdapter: ProviderAdapter {
         req.httpMethod = "POST"
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("https://github.com/vireo-app/vireo", forHTTPHeaderField: "HTTP-Referer")
+        req.setValue("https://github.com/TrueMoein/vireo", forHTTPHeaderField: "HTTP-Referer")
         req.setValue("Vireo", forHTTPHeaderField: "X-Title")
         req.timeoutInterval = 60
 
         let body: [String: Any] = [
             "model": model,
             "messages": [
-                ["role": "system", "content": Self.systemPrompt],
+                ["role": "system", "content": systemPrompt],
                 ["role": "user", "content": text],
             ],
             "response_format": ["type": "json_object"],
@@ -63,9 +73,94 @@ struct OpenRouterAdapter: ProviderAdapter {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         do {
-            return try decoder.decode(CorrectionResult.self, from: contentData)
+            var result = try decoder.decode(CorrectionResult.self, from: contentData)
+            result.originalText = text
+            return result
         } catch {
             throw AdapterError.decodeFailure(error.localizedDescription, raw)
+        }
+    }
+
+    /// Streaming variant of `correct(_:)`. Same wire shape but with
+    /// `stream: true`; we read Server-Sent Events from OpenRouter,
+    /// accumulate the JSON content into a buffer, and feed it to a
+    /// `StreamingJSONFieldExtractor` to surface the `corrected_text`
+    /// value to the UI as it builds. The full `mistakes` array is
+    /// parsed at the end from the complete buffer.
+    ///
+    /// The callback fires on the main actor; the calling Task can be
+    /// cancelled to abort the in-flight network read.
+    func correctStreaming(
+        _ text: String,
+        onPartialCorrection: @Sendable @MainActor (String) -> Void
+    ) async throws -> CorrectionResult {
+        var req = URLRequest(url: Self.endpoint)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("https://github.com/TrueMoein/vireo", forHTTPHeaderField: "HTTP-Referer")
+        req.setValue("Vireo", forHTTPHeaderField: "X-Title")
+        req.timeoutInterval = 120
+
+        let body: [String: Any] = [
+            "model": model,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": text],
+            ],
+            "response_format": ["type": "json_object"],
+            "temperature": 0.2,
+            "stream": true,
+        ]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (bytes, response) = try await URLSession.shared.bytes(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw AdapterError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            // Drain the body for diagnostics. Streamed errors are JSON,
+            // not SSE.
+            var snippet = ""
+            for try await line in bytes.lines {
+                snippet += line + "\n"
+                if snippet.count > 800 { break }
+            }
+            throw AdapterError.httpStatus(http.statusCode, snippet)
+        }
+
+        var contentBuffer = ""
+        var extractor = StreamingJSONFieldExtractor(targetField: "corrected_text")
+
+        for try await line in bytes.lines {
+            try Task.checkCancellation()
+            // SSE lines look like `data: {...}` or `data: [DONE]`.
+            guard line.hasPrefix("data: ") else { continue }
+            let payload = String(line.dropFirst("data: ".count))
+            if payload == "[DONE]" { break }
+            guard let data = payload.data(using: .utf8),
+                  let envelope = try? JSONDecoder().decode(StreamChunk.self, from: data),
+                  let delta = envelope.choices.first?.delta.content
+            else { continue }
+            contentBuffer += delta
+            if let partial = extractor.feed(delta) {
+                let snapshot = partial
+                await onPartialCorrection(snapshot)
+            }
+        }
+
+        let normalized = Self.normalizeJSONContent(contentBuffer)
+        guard let jsonData = normalized.data(using: .utf8) else {
+            throw AdapterError.decodeFailure("Empty content after normalization", contentBuffer)
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        do {
+            var result = try decoder.decode(CorrectionResult.self, from: jsonData)
+            result.originalText = text
+            return result
+        } catch {
+            throw AdapterError.decodeFailure(error.localizedDescription, contentBuffer)
         }
     }
 
@@ -76,7 +171,7 @@ struct OpenRouterAdapter: ProviderAdapter {
         req.httpMethod = "POST"
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("https://github.com/vireo-app/vireo", forHTTPHeaderField: "HTTP-Referer")
+        req.setValue("https://github.com/TrueMoein/vireo", forHTTPHeaderField: "HTTP-Referer")
         req.setValue("Vireo", forHTTPHeaderField: "X-Title")
         req.timeoutInterval = 60
 
@@ -180,6 +275,15 @@ struct OpenRouterAdapter: ProviderAdapter {
         struct Message: Codable { let content: String }
     }
 
+    /// One SSE chunk from the streaming endpoint. The `delta` may have
+    /// no `content` (e.g., on the first chunk with role-only delta), so
+    /// content is optional and we ignore that case.
+    private struct StreamChunk: Codable {
+        let choices: [StreamChoice]
+        struct StreamChoice: Codable { let delta: StreamDelta }
+        struct StreamDelta: Codable { let content: String? }
+    }
+
     enum AdapterError: LocalizedError {
         case invalidResponse
         case httpStatus(Int, String)
@@ -202,7 +306,7 @@ struct OpenRouterAdapter: ProviderAdapter {
         }
     }
 
-    private static let systemPrompt = """
+    static let systemPrompt = """
     You are an English writing coach helping a learner improve through deliberate practice. Your goal is to teach the underlying rule, not just patch the symptom.
 
     Given the user's text, return a JSON object with this exact shape and nothing else:

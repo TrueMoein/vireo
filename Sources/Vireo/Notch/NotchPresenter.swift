@@ -26,6 +26,9 @@ final class NotchPresenter: ObservableObject {
     /// (recent corrections, patterns, coach state).
     weak var sessionStore: SessionStore?
     weak var permission: AccessibilityPermission?
+    /// Set by AppDelegate so the popover header can read the active
+    /// style and render its name as the subtitle.
+    weak var styleStore: CorrectionStyleStore?
 
     static let hoverEnterDelay: Duration = .milliseconds(150)
     static let hoverLeaveDelay: Duration = .milliseconds(200)
@@ -160,14 +163,33 @@ final class NotchPresenter: ObservableObject {
         await notch?.expand(on: Self.preferredScreen)
     }
 
-    /// Show a transient message (info/warning/error). Auto-dismiss after
-    /// `messageAutoHideAfter`.
-    func showMessage(_ message: NotchMessage) async {
+    /// Open the notch into a streaming-correction state. Called once
+    /// at the start of a streamed correction; follow with
+    /// `updateStreaming(partial:)` as new tokens arrive.
+    func showStreaming(initialPartial: String = "") async {
+        autoHideTask?.cancel()
+        if notch == nil { start() }
+        model.display = .streamingCorrection(partial: initialPartial)
+        await notch?.expand(on: Self.preferredScreen)
+    }
+
+    /// Update the streaming partial. Cheap — the SwiftUI hierarchy
+    /// re-renders the partial Text but the card's identity is stable
+    /// (see ExpandedRouter.displayKey).
+    func updateStreaming(partial: String) {
+        guard model.display.isStreaming else { return }
+        model.display = .streamingCorrection(partial: partial)
+    }
+
+    /// Show a transient message (info/warning/error). Auto-dismiss
+    /// after `autoHideAfter` (default: `messageAutoHideAfter` = 6s).
+    /// Pass a shorter duration for action-confirmation toasts.
+    func showMessage(_ message: NotchMessage, autoHideAfter: Duration = NotchPresenter.messageAutoHideAfter) async {
         autoHideTask?.cancel()
         if notch == nil { start() }
         model.display = .message(message)
         await notch?.expand(on: Self.preferredScreen)
-        autoHideTask = scheduleAutoHide(after: Self.messageAutoHideAfter)
+        autoHideTask = scheduleAutoHide(after: autoHideAfter)
     }
 
     /// Show the first-launch wow moment if it hasn't been shown before.
@@ -193,6 +215,41 @@ final class NotchPresenter: ObservableObject {
         autoHideTask?.cancel()
         model.display = .idle
         await notch?.compact(on: Self.preferredScreen)
+    }
+
+    /// Slide an ambient review card into the notch. Called by `IdleCoach`
+    /// when the user has been idle and has at least one due item.
+    func showReview(_ payload: NotchReviewPayload) async {
+        autoHideTask?.cancel()
+        if notch == nil { start() }
+        model.display = .review(payload)
+        await notch?.expand(on: Self.preferredScreen)
+    }
+
+    /// Called from the in-card rating button. Forwards to the weakness
+    /// tracker, then dismisses the card. Surfaces the next due item if any.
+    func rateReview(payload: NotchReviewPayload, grade: Grade) async {
+        guard let tracker = coordinator?.weaknessTracker,
+              let itemId = payload.item.id else {
+            await dismissToIdle()
+            return
+        }
+        do {
+            try await tracker.rate(itemId: itemId, grade: grade)
+            log.info("Notch review rated \(itemId, privacy: .public) → \(String(describing: grade), privacy: .public)")
+        } catch {
+            log.error("Notch review rate failed: \(error.localizedDescription, privacy: .public)")
+        }
+        // Reload the store so the popover's coach card reflects the new count.
+        if let store = sessionStore {
+            await store.reload()
+        }
+        await dismissToIdle()
+    }
+
+    /// Called from the X button on the review card. Just dismisses.
+    func dismissReview() async {
+        await dismissToIdle()
     }
 
     private func scheduleAutoHide(after duration: Duration) -> Task<Void, Never> {

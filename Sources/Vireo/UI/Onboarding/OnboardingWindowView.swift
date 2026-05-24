@@ -12,8 +12,17 @@ struct OnboardingWindowView: View {
     @StateObject private var state: OnboardingState
     let onComplete: () -> Void
 
-    init(settings: SettingsModel, permission: AccessibilityPermission, onComplete: @escaping () -> Void) {
-        _state = StateObject(wrappedValue: OnboardingState(settings: settings, permission: permission))
+    init(
+        settings: SettingsModel,
+        permission: AccessibilityPermission,
+        styleStore: CorrectionStyleStore,
+        onComplete: @escaping () -> Void
+    ) {
+        _state = StateObject(wrappedValue: OnboardingState(
+            settings: settings,
+            permission: permission,
+            styleStore: styleStore
+        ))
         self.onComplete = onComplete
     }
 
@@ -25,6 +34,7 @@ struct OnboardingWindowView: View {
                 case .welcome:        WelcomeStep().environmentObject(state)
                 case .apiKey:         APIKeyStep().environmentObject(state)
                 case .accessibility:  AccessibilityStep().environmentObject(state)
+                case .style:          StylePickerStep().environmentObject(state)
                 case .ready:          ReadyStep().environmentObject(state)
                 }
             }
@@ -87,6 +97,7 @@ struct OnboardingWindowView: View {
         case .welcome:        return true
         case .apiKey:         return state.settings.hasAPIKey
         case .accessibility:  return true  // user may skip; AX needed before hotkey works
+        case .style:          return true  // a style is always selected (Grammar Coach default)
         case .ready:          return true
         }
     }
@@ -272,6 +283,92 @@ private struct AccessibilityStep: View {
         .padding(.horizontal, 32)
         .padding(.top, 12)
         .onAppear { state.permission.refresh() }
+    }
+}
+
+private struct StylePickerStep: View {
+    @EnvironmentObject var state: OnboardingState
+
+    /// Subset of built-ins suitable for first-launch onboarding. We
+    /// don't dump all eight on the user — these four cover the most
+    /// common daily writing contexts.
+    private var curated: [CorrectionStyle] {
+        [
+            CorrectionStyle.grammarCoach,
+            CorrectionStyle.professional,
+            CorrectionStyle.casual,
+            CorrectionStyle.concise,
+        ]
+    }
+
+    private let columns: [GridItem] = [GridItem(.flexible()), GridItem(.flexible())]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            stepHeader(
+                icon: "wand.and.stars",
+                title: "Pick your default style",
+                subtitle: "Vireo can fix grammar — or rewrite your text for a different context. Pick a starting style; you can switch any time, or build your own in Settings → Styles."
+            )
+
+            LazyVGrid(columns: columns, spacing: 10) {
+                ForEach(curated) { style in
+                    styleTile(style)
+                }
+            }
+
+            Text("Default: Grammar Coach. Other styles return only the rewritten text — no per-mistake breakdown.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer()
+        }
+        .padding(.horizontal, 32)
+        .padding(.top, 12)
+    }
+
+    private func styleTile(_ style: CorrectionStyle) -> some View {
+        let isActive = style.id == state.styleStore.activeStyleID
+        return Button {
+            state.styleStore.setActive(style.id)
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: style.icon)
+                        .font(.title3)
+                        .foregroundStyle(isActive ? Color.Vireo.correction : .secondary)
+                    Spacer()
+                    if isActive {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.Vireo.correction)
+                    }
+                }
+                Text(style.name)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(style.subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isActive ? Color.Vireo.correction.opacity(0.10) : Color.secondary.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(
+                        isActive ? Color.Vireo.correction.opacity(0.6) : Color.secondary.opacity(0.12),
+                        lineWidth: 1
+                    )
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

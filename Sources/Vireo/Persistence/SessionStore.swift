@@ -67,4 +67,18 @@ final class SessionStore: ObservableObject {
             return []
         }
     }
+
+    /// Delete one session by id and refresh the list. Optimistically
+    /// removes the row from the published array first so the UI feels
+    /// instant; a reload follows to sync count + patterns.
+    func deleteSession(id: Int64) async {
+        guard let repository else { return }
+        sessions.removeAll { $0.id == id }
+        do {
+            try await repository.deleteSession(id: id)
+        } catch {
+            log.error("deleteSession failed: \(error.localizedDescription, privacy: .public)")
+        }
+        await reload()
+    }
 }

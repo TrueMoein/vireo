@@ -10,6 +10,7 @@ import SwiftUI
 final class OnboardingWindowController {
     let settings: SettingsModel
     let permission: AccessibilityPermission
+    let styleStore: CorrectionStyleStore
     /// Set by AppDelegate after both are constructed. Used to re-assert
     /// the notch panel after we activate the onboarding window, since
     /// `NSApp.activate(...)` can displace screensaver-level panels on an
@@ -19,9 +20,10 @@ final class OnboardingWindowController {
     private var window: NSWindow?
     private var cancellable: AnyCancellable?
 
-    init(settings: SettingsModel, permission: AccessibilityPermission) {
+    init(settings: SettingsModel, permission: AccessibilityPermission, styleStore: CorrectionStyleStore) {
         self.settings = settings
         self.permission = permission
+        self.styleStore = styleStore
         // Listen for re-run requests from Settings → Access → Re-run onboarding.
         cancellable = NotificationCenter.default
             .publisher(for: .vireoShowOnboarding)
@@ -62,6 +64,7 @@ final class OnboardingWindowController {
         let root = OnboardingWindowView(
             settings: settings,
             permission: permission,
+            styleStore: styleStore,
             onComplete: { [weak self] in
                 self?.close()
             }

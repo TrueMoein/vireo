@@ -13,6 +13,9 @@ struct Session: Identifiable, Codable, Equatable, Hashable, Sendable {
     let llmProvider: String?
     let model: String?
     let latencyMs: Int?
+    /// The CorrectionStyle.id (as UUID string) that produced this row.
+    /// Null for pre-v3 rows written before the styles feature shipped.
+    let styleId: String?
 }
 
 extension Session: FetchableRecord, MutablePersistableRecord {

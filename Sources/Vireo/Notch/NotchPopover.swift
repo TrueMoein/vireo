@@ -20,6 +20,10 @@ struct NotchPopover: View {
     @ObservedObject var settings: SettingsModel
     @ObservedObject var sessionStore: SessionStore
     @ObservedObject var permission: AccessibilityPermission
+    /// Optional because the popover renders even before AppDelegate
+    /// has wired the store in (rare, but defensive). When present,
+    /// changes to the active style re-render the header subtitle.
+    @ObservedObject var styleStore: CorrectionStyleStore
     let presenter: NotchPresenter
 
     @Environment(\.openWindow) private var openWindow
@@ -70,12 +74,35 @@ struct NotchPopover: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Vireo")
                     .font(.system(.title3, design: .serif).weight(.medium))
-                Text("an English coach")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                headerSubtitle
             }
             Spacer()
             statusPill
+        }
+    }
+
+    /// When set up, show the active style name so the user knows what
+    /// the next correction will produce. When setup is incomplete,
+    /// nudge them toward the missing step.
+    @ViewBuilder
+    private var headerSubtitle: some View {
+        if !settings.hasAPIKey {
+            Text("Add your API key to start")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        } else if !permission.isGranted {
+            Text("Grant Accessibility to capture text")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        } else {
+            let style = styleStore.activeStyle
+            HStack(spacing: 4) {
+                Image(systemName: style.icon)
+                    .font(.system(size: 9))
+                Text(style.name)
+            }
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(Color.Vireo.correction)
         }
     }
 
@@ -243,6 +270,18 @@ struct NotchPopover: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+                if let style = resolveSessionStyle(session) {
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 3) {
+                        Image(systemName: style.icon)
+                            .font(.system(size: 8))
+                        Text(style.name)
+                    }
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(Color.Vireo.correction)
+                }
             }
             Text(session.correctedText)
                 .font(.system(.caption, design: .serif))
@@ -250,6 +289,14 @@ struct NotchPopover: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
+    }
+
+    /// Resolve the style that produced a session, if its style_id is in
+    /// the store. Pre-v3 rows have no style_id, in which case we render
+    /// nothing — better than guessing.
+    private func resolveSessionStyle(_ session: Session) -> CorrectionStyle? {
+        guard let raw = session.styleId, let id = UUID(uuidString: raw) else { return nil }
+        return styleStore.allStyles.first(where: { $0.id == id })
     }
 
     // MARK: - Patterns card

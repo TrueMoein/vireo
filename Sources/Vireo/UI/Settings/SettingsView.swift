@@ -15,12 +15,18 @@ struct SettingsView: View {
             ProviderTab()
                 .tabItem { Label("Provider", systemImage: "sparkles") }
 
+            StylesTab()
+                .tabItem { Label("Styles", systemImage: "wand.and.stars") }
+
             ShortcutsTab()
                 .tabItem { Label("Shortcuts", systemImage: "command") }
 
             AccessTab()
                 .tabItem { Label("Access", systemImage: "lock.shield") }
+
+            DiagnosticsView()
+                .tabItem { Label("Diagnostics", systemImage: "stethoscope") }
         }
-        .frame(width: 560, height: 540)
+        .frame(width: 580, height: 620)
     }
 }

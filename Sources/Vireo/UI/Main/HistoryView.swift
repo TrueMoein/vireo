@@ -1,12 +1,16 @@
 // HistoryTab.swift — Settings tab listing past corrections with search.
 
+import AppKit
 import SwiftUI
 
 struct HistoryView: View {
     @EnvironmentObject var store: SessionStore
+    @EnvironmentObject var styleStore: CorrectionStyleStore
     @State private var searchQuery = ""
     @State private var expandedID: Int64?
     @State private var expandedMistakes: [Mistake] = []
+    @State private var hoveredID: Int64?
+    @State private var pendingDeleteID: Int64?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,6 +30,30 @@ struct HistoryView: View {
         .onChange(of: searchQuery) { _, q in
             Task { await store.reload(search: q) }
         }
+        .alert("Delete this correction?", isPresented: deleteAlertBinding) {
+            Button("Cancel", role: .cancel) { pendingDeleteID = nil }
+            Button("Delete", role: .destructive) {
+                if let id = pendingDeleteID {
+                    Task { await store.deleteSession(id: id) }
+                }
+                pendingDeleteID = nil
+            }
+        } message: {
+            Text("This permanently removes the saved session and its mistake breakdown from your local history. Patterns already learned from it stay.")
+        }
+    }
+
+    private var deleteAlertBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteID != nil },
+            set: { if !$0 { pendingDeleteID = nil } }
+        )
+    }
+
+    private func copyCorrected(_ session: Session) async {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(session.correctedText, forType: .string)
     }
 
     // MARK: - States
@@ -121,6 +149,7 @@ struct HistoryView: View {
 
     private func sessionRow(_ session: Session) -> some View {
         let isExpanded = expandedID == session.id
+        let isHovered = hoveredID == session.id
         return VStack(alignment: .leading, spacing: 0) {
             Button {
                 Task { await toggle(session) }
@@ -137,7 +166,29 @@ struct HistoryView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        if let style = resolveSessionStyle(session) {
+                            Text("·")
+                                .foregroundStyle(.secondary)
+                            HStack(spacing: 3) {
+                                Image(systemName: style.icon)
+                                    .font(.caption2)
+                                Text(style.name)
+                                    .font(.caption.weight(.medium))
+                            }
+                            .foregroundStyle(Color.Vireo.correction)
+                        }
                         Spacer()
+                        if isHovered, let id = session.id {
+                            Button {
+                                pendingDeleteID = id
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.Vireo.mistake)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Delete this correction")
+                        }
                         Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
@@ -155,6 +206,22 @@ struct HistoryView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .onHover { hovering in
+                hoveredID = hovering ? session.id : (hoveredID == session.id ? nil : hoveredID)
+            }
+            .contextMenu {
+                Button {
+                    Task { await copyCorrected(session) }
+                } label: {
+                    Label("Copy corrected text", systemImage: "doc.on.doc")
+                }
+                Divider()
+                Button(role: .destructive) {
+                    pendingDeleteID = session.id
+                } label: {
+                    Label("Delete correction", systemImage: "trash")
+                }
+            }
 
             if isExpanded {
                 expandedDetail(for: session)
@@ -237,5 +304,12 @@ struct HistoryView: View {
             expandedID = session.id
             expandedMistakes = await store.mistakes(for: session)
         }
+    }
+
+    /// Resolve the style that produced a session, if its style_id is in
+    /// the store. Pre-v3 rows return nil and the row hides the chip.
+    private func resolveSessionStyle(_ session: Session) -> CorrectionStyle? {
+        guard let raw = session.styleId, let id = UUID(uuidString: raw) else { return nil }
+        return styleStore.allStyles.first(where: { $0.id == id })
     }
 }
