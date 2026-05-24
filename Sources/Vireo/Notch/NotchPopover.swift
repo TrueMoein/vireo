@@ -73,6 +73,18 @@ struct NotchPopover: View {
 
     private var actionsList: some View {
         VStack(spacing: 4) {
+            Button {
+                Task { @MainActor in
+                    await presenter.dismissToIdle()
+                    openWindow(id: "vireo-main")
+                    try? await Task.sleep(for: .milliseconds(80))
+                    bringWindowForward(matching: "vireo-main")
+                }
+            } label: {
+                popoverRowLabel(systemImage: "bird", label: "Open Vireo", shortcut: nil)
+            }
+            .buttonStyle(NotchActionButtonStyle())
+
             SettingsLink {
                 popoverRowLabel(systemImage: "gear", label: "Settings", shortcut: "⌘,")
             }
@@ -81,19 +93,8 @@ struct NotchPopover: View {
                 TapGesture().onEnded {
                     Task { @MainActor in
                         await presenter.dismissToIdle()
-                        // SettingsLink fires its own openSettings, but for an
-                        // .accessory app the resulting window often appears
-                        // behind whatever was frontmost. Force activation
-                        // and bring the Settings window all the way forward.
                         try? await Task.sleep(for: .milliseconds(80))
-                        NSApp.activate(ignoringOtherApps: true)
-                        for window in NSApp.windows {
-                            let id = window.identifier?.rawValue.lowercased() ?? ""
-                            if id.contains("settings") || window.title == "Settings" || window.title == "Vireo Settings" {
-                                window.makeKeyAndOrderFront(nil)
-                                window.orderFrontRegardless()
-                            }
-                        }
+                        bringWindowForward(matching: "settings")
                     }
                 }
             )
@@ -104,6 +105,23 @@ struct NotchPopover: View {
                 popoverRowLabel(systemImage: "power", label: "Quit Vireo", shortcut: "⌘Q")
             }
             .buttonStyle(NotchActionButtonStyle())
+        }
+    }
+
+    /// Activate Vireo and bring the first window whose identifier or title
+    /// contains `needle` (case-insensitive) all the way to the front.
+    /// Necessary for accessory apps whose windows would otherwise appear
+    /// behind whichever app was frontmost.
+    private func bringWindowForward(matching needle: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let n = needle.lowercased()
+        for window in NSApp.windows {
+            let wid = window.identifier?.rawValue.lowercased() ?? ""
+            let title = window.title.lowercased()
+            if wid.contains(n) || title.contains(n) {
+                window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
+            }
         }
     }
 
