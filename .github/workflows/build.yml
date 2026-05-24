@@ -14,18 +14,25 @@ concurrency:
 jobs:
   swift-build:
     name: swift build (debug)
-    # Vireo targets macOS 26 (Tahoe); pin to the macOS-latest runner so
-    # we pick up the newest stable Xcode + SDK GitHub provides.
-    runs-on: macos-latest
+    # Vireo needs the macOS 26 SDK (Liquid Glass APIs — `.glassEffect`,
+    # MeshGradient driven animations, etc.). Pin to the Tahoe runner.
+    # If GitHub hasn't added `macos-26` as a label yet, this job fails
+    # with "No runner matching the specified labels" — fall back to
+    # `macos-latest` + a setup-xcode step in that case.
+    runs-on: macos-26
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        # Pin to the newest stable Xcode the runner image ships with so
-        # builds are reproducible across runner upgrades.
-        run: sudo xcode-select -switch /Applications/Xcode.app
+      - name: Select latest Xcode
+        # The Tahoe runner ships multiple Xcode versions; switch to the
+        # newest stable one explicitly so we never accidentally build
+        # against an older SDK that doesn't expose Liquid Glass APIs.
+        run: |
+          LATEST_XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Using $LATEST_XCODE"
+          sudo xcode-select -switch "$LATEST_XCODE"
 
       - name: Show toolchain
         run: |

@@ -128,8 +128,11 @@ actor SessionRepository {
     /// grouped by category and sorted by total count. This is the read
     /// model the Coach surfaces as "your most frequent patterns."
     func categoryPatterns(limit: Int = 100) async throws -> [CategoryPattern] {
-        let rows = try await database.queue.read { db in
-            try Row.fetchAll(db, sql: """
+        // Explicit return-type annotation on the closure so the swift
+        // toolchain on older runners doesn't pick the wrong fetchAll
+        // overload and infer the closure as returning Void.
+        let rows: [Row] = try await database.queue.read { db -> [Row] in
+            return try Row.fetchAll(db, sql: """
                 SELECT category, rule, COUNT(*) AS cnt
                 FROM mistake
                 GROUP BY category, rule

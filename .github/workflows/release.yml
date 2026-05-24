@@ -17,14 +17,19 @@ permissions:
 jobs:
   release:
     name: Build Vireo.app + attach to Release
-    runs-on: macos-latest
+    # Vireo needs the macOS 26 SDK (Liquid Glass APIs). See build.yml
+    # for the fallback note if `macos-26` isn't yet a runner label.
+    runs-on: macos-26
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode.app
+      - name: Select latest Xcode
+        run: |
+          LATEST_XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Using $LATEST_XCODE"
+          sudo xcode-select -switch "$LATEST_XCODE"
 
       - name: Show toolchain
         run: |
