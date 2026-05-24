@@ -2,7 +2,7 @@
 
 import SwiftUI
 
-struct HistoryTab: View {
+struct HistoryView: View {
     @EnvironmentObject var store: SessionStore
     @State private var searchQuery = ""
     @State private var expandedID: Int64?

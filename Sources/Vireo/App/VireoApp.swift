@@ -15,7 +15,13 @@ struct VireoApp: App {
                 .environmentObject(appDelegate.notchPresenter)
                 .environmentObject(appDelegate.permission)
                 .environmentObject(appDelegate.hoverButton)
+        }
+
+        Window("Vireo", id: "vireo-main") {
+            MainWindowView()
                 .environmentObject(appDelegate.sessionStore)
         }
+        .defaultSize(width: 880, height: 620)
+        .windowResizability(.contentMinSize)
     }
 }

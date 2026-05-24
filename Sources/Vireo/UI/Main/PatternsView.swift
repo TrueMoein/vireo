@@ -4,7 +4,7 @@
 
 import SwiftUI
 
-struct PatternsTab: View {
+struct PatternsView: View {
     @EnvironmentObject var store: SessionStore
     @State private var expandedCategory: String?
     @State private var showReview = false

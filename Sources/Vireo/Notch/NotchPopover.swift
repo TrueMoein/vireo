@@ -11,6 +11,7 @@ import SwiftUI
 struct NotchPopover: View {
     @ObservedObject var settings: SettingsModel
     let presenter: NotchPresenter
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -109,7 +110,7 @@ struct NotchPopover: View {
     private func popoverRowLabel(
         systemImage: String,
         label: String,
-        shortcut: String
+        shortcut: String?
     ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: systemImage)
@@ -118,9 +119,11 @@ struct NotchPopover: View {
             Text(label)
                 .foregroundStyle(.primary)
             Spacer()
-            Text(shortcut)
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.tertiary)
+            if let shortcut {
+                Text(shortcut)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .contentShape(Rectangle())
         .padding(.vertical, 6)

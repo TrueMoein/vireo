@@ -1,7 +1,6 @@
-// SettingsView.swift — three-tab Settings window. Per-field auto-save, no
-// global Save button. Each tab is its own focused view (ProviderTab,
-// ShortcutsTab, AccessTab) so the user isn't scrolling through unrelated
-// controls.
+// SettingsView.swift — Settings is configuration ONLY (Provider, Shortcuts,
+// Access). History / Patterns / Reviews live in the dedicated main window
+// (MainWindowView), opened via the notch popover's "Open Vireo" entry.
 
 import SwiftUI
 
@@ -19,15 +18,9 @@ struct SettingsView: View {
             ShortcutsTab()
                 .tabItem { Label("Shortcuts", systemImage: "command") }
 
-            HistoryTab()
-                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
-
-            PatternsTab()
-                .tabItem { Label("Patterns", systemImage: "chart.bar.doc.horizontal") }
-
             AccessTab()
                 .tabItem { Label("Access", systemImage: "lock.shield") }
         }
-        .frame(width: 620, height: 600)
+        .frame(width: 560, height: 540)
     }
 }
