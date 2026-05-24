@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let weaknessTracker: WeaknessTracker?
     let sessionStore: SessionStore
     let drillGenerator: DrillGenerator
+    let onboardingController: OnboardingWindowController
 
     override init() {
         let settings = SettingsModel()
@@ -41,6 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // failed to open.
         self.sessionStore = SessionStore(repository: repo, weaknessTracker: tracker)
         self.drillGenerator = DrillGenerator(settings: settings)
+        self.onboardingController = OnboardingWindowController(
+            settings: settings,
+            permission: AccessibilityPermission()
+        )
 
         let presenter = NotchPresenter(settings: settings)
         let coordinator = AppCoordinator(
@@ -76,12 +81,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         notchPresenter.start()
         registerHotkeys()
 
-        // First-launch wow moment: after a brief settle delay so the notch
-        // is fully positioned, slide down the MeshGradient + serif
-        // welcome card. Only ever shown once per user.
+        // First launch: show the proper onboarding wizard. Subsequent
+        // launches show nothing (the wizard's hasOnboarded flag gates
+        // future presentations). The MeshGradient welcome moment now
+        // lives inside the wizard's first step rather than as a
+        // standalone notch card.
         Task {
-            try? await Task.sleep(for: .milliseconds(700))
-            await notchPresenter.showFirstLaunchIfNeeded()
+            try? await Task.sleep(for: .milliseconds(500))
+            self.onboardingController.showIfNeeded()
         }
     }
 

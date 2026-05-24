@@ -6,6 +6,11 @@ import SwiftUI
 
 struct AccessTab: View {
     @EnvironmentObject var permission: AccessibilityPermission
+    /// Set by AppDelegate via .onAppear closure in SettingsView's Access tab
+    /// so the "Re-run onboarding" button has something to call. We pass it
+    /// through Notification to avoid threading another EnvironmentObject
+    /// down the tab tree just for this rare button.
+    @State private var onboardingTrigger: () -> Void = {}
 
     var body: some View {
         Form {
@@ -46,6 +51,14 @@ struct AccessTab: View {
                         .background(.regularMaterial)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
+            }
+
+            Section("Onboarding") {
+                Button("Re-run onboarding…") {
+                    OnboardingState.resetForTesting()
+                    NotificationCenter.default.post(name: .vireoShowOnboarding, object: nil)
+                }
+                .controlSize(.small)
             }
         }
         .formStyle(.grouped)
