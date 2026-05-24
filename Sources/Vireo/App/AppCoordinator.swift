@@ -17,6 +17,8 @@ final class AppCoordinator {
     let settings: SettingsModel
     let notch: NotchPresenter
     let sessionRepository: SessionRepository?
+    /// Weak so we can call reload() after each save without a retain cycle.
+    weak var sessionStore: SessionStore?
 
     private let resolver = SelectedTextResolver()
     private var lastSourceApp: NSRunningApplication?

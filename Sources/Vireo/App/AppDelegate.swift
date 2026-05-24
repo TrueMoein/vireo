@@ -57,6 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // its notch field; presenter holds coordinator weakly for action
         // dispatch from CorrectionCard buttons.
         presenter.coordinator = coordinator
+        // Wire SessionStore into the coordinator so History refreshes
+        // automatically after each save.
+        coordinator.sessionStore = self.sessionStore
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

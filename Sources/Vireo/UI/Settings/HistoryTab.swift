@@ -19,7 +19,10 @@ struct HistoryTab: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task { await store.reload() }
+        // .onAppear fires on every tab switch back to History; .task only
+        // fires once when the view is first created. Belt-and-suspenders so
+        // newly-saved corrections show up reliably.
+        .onAppear { Task { await store.reload(search: searchQuery) } }
         .onChange(of: searchQuery) { _, q in
             Task { await store.reload(search: q) }
         }
@@ -60,6 +63,14 @@ struct HistoryTab: View {
                 }
                 .buttonStyle(.plain)
             }
+            Button {
+                Task { await store.reload(search: searchQuery) }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Refresh")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
