@@ -13,11 +13,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let permission: AccessibilityPermission
     let focusObserver: FocusObserver
     let hoverButton: HoverButtonController
+    let database: Database?
+    let sessionRepository: SessionRepository?
+    let sessionStore: SessionStore
 
     override init() {
         let settings = SettingsModel()
+
+        // Database is best-effort: a failure here shouldn't break the app,
+        // just means history isn't recorded for this run.
+        let database: Database?
+        do {
+            database = try Database()
+        } catch {
+            print("[Vireo] Database init failed: \(error)")
+            database = nil
+        }
+        self.database = database
+        let repo = database.map(SessionRepository.init)
+        self.sessionRepository = repo
+        // SessionStore is always non-nil; it carries an `unavailable` flag
+        // for the History tab to render a clean error state if the DB
+        // failed to open.
+        self.sessionStore = SessionStore(repository: repo)
+
         let presenter = NotchPresenter(settings: settings)
-        let coordinator = AppCoordinator(settings: settings, notch: presenter)
+        let coordinator = AppCoordinator(
+            settings: settings,
+            notch: presenter,
+            sessionRepository: repo
+        )
         let focusObserver = FocusObserver()
         let hoverButton = HoverButtonController(coordinator: coordinator, focus: focusObserver)
 

@@ -19,9 +19,12 @@ struct SettingsView: View {
             ShortcutsTab()
                 .tabItem { Label("Shortcuts", systemImage: "command") }
 
+            HistoryTab()
+                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+
             AccessTab()
                 .tabItem { Label("Access", systemImage: "lock.shield") }
         }
-        .frame(width: 580, height: 540)
+        .frame(width: 620, height: 600)
     }
 }

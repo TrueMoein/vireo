@@ -1,16 +1,87 @@
 // Database.swift — GRDB connection pool + migrations + FTS5 setup.
 //
-// Initial schema:
-//   sessions(id, timestamp, source_app, raw_text, corrected_text,
-//            llm_provider, model, latency_ms)
-//   mistakes(id, session_id, original_phrase, corrected_phrase,
-//            category, rule, severity)
-//   categories(id, name, l1_interference_for_languages)
-//   weakness_items(category_id, rule, fsrs_state, due_at, mastered_at?)
+// Schema (v1):
+//   session: id, timestamp, source_app, raw_text, corrected_text,
+//            llm_provider, model, latency_ms
+//   mistake: id, session_id, original_phrase, fixed_phrase, category,
+//            rule, explanation (FK → session.id ON DELETE CASCADE)
+//   session_fts: FTS5 virtual table mirroring session.{raw,corrected}_text
+//                via content-table sync triggers
 //
-// FTS5 virtual table mirrors sessions.corrected_text for History search.
-// Threading: DatabasePool, all writes inside transactions.
-//
-// TODO: implement in Phase 4.
+// Path: ~/Library/Application Support/Vireo/vireo.sqlite
 
 import Foundation
+import GRDB
+import OSLog
+
+private let log = Logger(subsystem: "co.vireo", category: "Database")
+
+final class Database: Sendable {
+    let queue: DatabaseQueue
+
+    init() throws {
+        let url = try Self.defaultDatabaseURL()
+        var config = Configuration()
+        config.label = "co.vireo.db"
+        // Foreign keys are on by default in GRDB but be explicit so cascade
+        // deletes from session → mistake actually fire.
+        config.foreignKeysEnabled = true
+
+        let queue = try DatabaseQueue(path: url.path, configuration: config)
+        try Self.migrator.migrate(queue)
+        self.queue = queue
+        log.info("Database opened at \(url.path, privacy: .public)")
+    }
+
+    private static func defaultDatabaseURL() throws -> URL {
+        let fm = FileManager.default
+        let appSupport = try fm.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let vireoDir = appSupport.appendingPathComponent("Vireo", isDirectory: true)
+        try fm.createDirectory(at: vireoDir, withIntermediateDirectories: true)
+        return vireoDir.appendingPathComponent("vireo.sqlite")
+    }
+
+    private static var migrator: DatabaseMigrator {
+        var migrator = DatabaseMigrator()
+
+        migrator.registerMigration("v1") { db in
+            try db.create(table: "session") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("timestamp", .double).notNull().indexed()
+                t.column("source_app", .text)
+                t.column("raw_text", .text).notNull()
+                t.column("corrected_text", .text).notNull()
+                t.column("llm_provider", .text)
+                t.column("model", .text)
+                t.column("latency_ms", .integer)
+            }
+
+            try db.create(table: "mistake") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("session_id", .integer)
+                    .notNull()
+                    .indexed()
+                    .references("session", onDelete: .cascade)
+                t.column("original_phrase", .text).notNull()
+                t.column("fixed_phrase", .text).notNull()
+                t.column("category", .text).notNull().indexed()
+                t.column("rule", .text).notNull()
+                t.column("explanation", .text).notNull()
+            }
+
+            try db.create(virtualTable: "session_fts", using: FTS5()) { t in
+                t.synchronize(withTable: "session")
+                t.tokenizer = .porter(wrapping: .unicode61())
+                t.column("raw_text")
+                t.column("corrected_text")
+            }
+        }
+
+        return migrator
+    }
+}

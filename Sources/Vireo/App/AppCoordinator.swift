@@ -16,13 +16,19 @@ private let log = Logger(subsystem: "co.vireo", category: "Coordinator")
 final class AppCoordinator {
     let settings: SettingsModel
     let notch: NotchPresenter
+    let sessionRepository: SessionRepository?
 
     private let resolver = SelectedTextResolver()
     private var lastSourceApp: NSRunningApplication?
 
-    init(settings: SettingsModel, notch: NotchPresenter) {
+    init(
+        settings: SettingsModel,
+        notch: NotchPresenter,
+        sessionRepository: SessionRepository? = nil
+    ) {
         self.settings = settings
         self.notch = notch
+        self.sessionRepository = sessionRepository
     }
 
     // MARK: - Correct selection
