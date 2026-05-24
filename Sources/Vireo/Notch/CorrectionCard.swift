@@ -1,8 +1,7 @@
 // CorrectionCard.swift — what the notch shows when a correction is ready.
 //
-// Uses the DesignSystem tokens (Color.Vireo, Font.Vireo, Animation.Vireo).
-// Layout: serif corrected sentence + per-mistake list with coral/sage
-// diff tokens + Replace / Copy / Dismiss action row.
+// Uses the DesignSystem tokens (Color.Vireo, Font.Vireo, Animation.Vireo)
+// and the vireoGlassCard material modifier for the signature look.
 
 import SwiftUI
 
@@ -40,9 +39,7 @@ struct CorrectionCard: View {
         }
         .padding(20)
         .frame(width: 560, alignment: .leading)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: .black.opacity(0.18), radius: 24, x: 0, y: 12)
+        .vireoGlassCard(cornerRadius: 22)
         .padding(.horizontal, 8)
         .padding(.top, 4)
     }
@@ -50,7 +47,7 @@ struct CorrectionCard: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "bird.fill")
-                .foregroundStyle(.tint)
+                .foregroundStyle(Color.Vireo.correction)
                 .imageScale(.medium)
             Text("Correction")
                 .font(.Vireo.cardHeadline)

@@ -13,11 +13,11 @@ struct MessageCard: View {
                 .padding(.top, 2)
             VStack(alignment: .leading, spacing: 4) {
                 Text(message.title)
-                    .font(.callout.bold())
+                    .font(.Vireo.statusLine.bold())
                     .foregroundStyle(.primary)
                 if let detail = message.detail {
                     Text(detail)
-                        .font(.caption)
+                        .font(.Vireo.detail)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                         .multilineTextAlignment(.leading)
@@ -28,18 +28,16 @@ struct MessageCard: View {
         }
         .padding(18)
         .frame(width: 440, alignment: .leading)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .shadow(color: .black.opacity(0.18), radius: 18, x: 0, y: 8)
+        .vireoGlassCard(cornerRadius: 18)
         .padding(.horizontal, 8)
         .padding(.top, 4)
     }
 
     private var toneColor: Color {
         switch message.tone {
-        case .info: return .blue
-        case .warning: return Color(red: 0.85, green: 0.55, blue: 0.20)
-        case .error: return Color(red: 0.851, green: 0.467, blue: 0.341)
+        case .info: return Color.Vireo.info
+        case .warning: return Color.Vireo.warning
+        case .error: return Color.Vireo.mistake
         }
     }
 }

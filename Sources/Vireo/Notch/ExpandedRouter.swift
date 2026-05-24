@@ -38,7 +38,7 @@ struct ExpandedRouter: View {
                     .transition(.blurReplace.combined(with: .scale(0.96)))
             }
         }
-        .animation(.smooth(duration: 0.32, extraBounce: 0.12), value: displayKey)
+        .animation(.Vireo.entry, value: displayKey)
     }
 
     private var displayKey: String {

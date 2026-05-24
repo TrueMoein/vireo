@@ -2,9 +2,8 @@
 //
 // Compact glass card with: header (bird + serif "Vireo"), status row (model
 // ready or "add key"), and two actions (Settings, Quit). Settings uses
-// NSApp.sendAction(showSettingsWindow:) because the SwiftUI openSettings
-// environment value doesn't propagate across the NSHostingView boundary
-// that DynamicNotchKit puts us behind.
+// SettingsLink (macOS 14+) so the Settings scene opens cleanly without
+// activation hops or deprecated NSApp.sendAction calls.
 
 import AppKit
 import SwiftUI
@@ -22,22 +21,19 @@ struct NotchPopover: View {
         }
         .padding(20)
         .frame(width: 300, alignment: .leading)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.18), radius: 22, x: 0, y: 10)
+        .vireoGlassCard(cornerRadius: 20)
         .padding(.horizontal, 8)
         .padding(.top, 4)
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: "bird.fill")
                 .font(.title2)
-                .foregroundStyle(.tint)
+                .foregroundStyle(Color.Vireo.correction)
             VStack(alignment: .leading, spacing: 0) {
                 Text("Vireo")
-                    .font(.system(.title3, design: .serif))
-                    .fontWeight(.medium)
+                    .font(.system(.title3, design: .serif).weight(.medium))
                 Text("an English coach")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -51,10 +47,10 @@ struct NotchPopover: View {
         if settings.hasAPIKey {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Color.Vireo.correction)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Ready")
-                        .font(.callout)
+                        .font(.Vireo.statusLine)
                         .fontWeight(.medium)
                     Text(settings.model)
                         .font(.system(.caption2, design: .monospaced))
@@ -66,9 +62,9 @@ struct NotchPopover: View {
         } else {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.Vireo.warning)
                 Text("Add your OpenRouter key in Settings")
-                    .font(.callout)
+                    .font(.Vireo.statusLine)
                     .foregroundStyle(.primary)
             }
         }
@@ -76,10 +72,6 @@ struct NotchPopover: View {
 
     private var actionsList: some View {
         VStack(spacing: 4) {
-            // macOS 14+ wants SettingsLink for opening the Settings scene —
-            // the old NSApp.sendAction(showSettingsWindow:) is deprecated and
-            // emits a runtime warning. SettingsLink also handles activation
-            // and window ordering automatically.
             SettingsLink {
                 popoverRowLabel(systemImage: "gear", label: "Settings", shortcut: "⌘,")
             }
@@ -130,7 +122,7 @@ private struct NotchActionButtonStyle: ButtonStyle {
                     .fill(.primary.opacity(isHovered ? 0.08 : 0))
             )
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.smooth(duration: 0.15), value: isHovered)
+            .animation(.Vireo.microInteraction, value: isHovered)
             .animation(.smooth(duration: 0.12), value: configuration.isPressed)
             .onHover { isHovered = $0 }
     }

@@ -9,23 +9,22 @@ struct BusyCard: View {
         HStack(spacing: 14) {
             ProgressView()
                 .controlSize(.small)
+                .tint(Color.Vireo.correction)
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(.callout)
+                    .font(.Vireo.statusLine)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text("Reading and analyzing…")
-                    .font(.caption2)
+                    .font(.Vireo.categoryChip)
                     .foregroundStyle(.secondary)
             }
             Spacer()
         }
         .padding(18)
         .frame(width: 360, alignment: .leading)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .shadow(color: .black.opacity(0.18), radius: 18, x: 0, y: 8)
+        .vireoGlassCard(cornerRadius: 18)
         .padding(.horizontal, 8)
         .padding(.top, 4)
     }
