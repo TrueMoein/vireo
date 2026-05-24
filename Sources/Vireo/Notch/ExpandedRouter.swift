@@ -36,6 +36,9 @@ struct ExpandedRouter: View {
             case .message(let message):
                 MessageCard(message: message)
                     .transition(.blurReplace.combined(with: .scale(0.96)))
+            case .firstLaunch:
+                FirstLaunchCard()
+                    .transition(.blurReplace.combined(with: .scale(0.94)))
             }
         }
         .animation(.Vireo.entry, value: displayKey)
@@ -48,6 +51,7 @@ struct ExpandedRouter: View {
         case .correction: return "correction"
         case .busy: return "busy"
         case .message: return "message"
+        case .firstLaunch: return "firstLaunch"
         }
     }
 }

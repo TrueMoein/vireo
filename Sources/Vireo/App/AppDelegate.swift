@@ -38,6 +38,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         NSApp.setActivationPolicy(.accessory)
         notchPresenter.start()
         registerHotkeys()
+
+        // First-launch wow moment: after a brief settle delay so the notch
+        // is fully positioned, slide down the MeshGradient + serif
+        // welcome card. Only ever shown once per user.
+        Task {
+            try? await Task.sleep(for: .milliseconds(700))
+            await notchPresenter.showFirstLaunchIfNeeded()
+        }
     }
 
     private func registerHotkeys() {

@@ -24,6 +24,9 @@ final class NotchPresenter: ObservableObject {
     static let hoverLeaveDelay: Duration = .milliseconds(200)
     static let correctionAutoHideAfter: Duration = .seconds(12)
     static let messageAutoHideAfter: Duration = .seconds(6)
+    static let firstLaunchAutoHideAfter: Duration = .seconds(4)
+
+    private static let firstLaunchDefaultsKey = "co.vireo.hasShownFirstLaunch"
 
     private var notch: DynamicNotch<ExpandedRouter, EmptyView, CompactBirdIcon>?
     private var hoverObserver: AnyCancellable?
@@ -88,6 +91,24 @@ final class NotchPresenter: ObservableObject {
         model.display = .message(message)
         await notch?.expand(on: Self.preferredScreen)
         autoHideTask = scheduleAutoHide(after: Self.messageAutoHideAfter)
+    }
+
+    /// Show the first-launch wow moment if it hasn't been shown before.
+    /// Sets the UserDefaults flag and schedules auto-dismiss.
+    func showFirstLaunchIfNeeded() async {
+        guard !UserDefaults.standard.bool(forKey: Self.firstLaunchDefaultsKey) else { return }
+        UserDefaults.standard.set(true, forKey: Self.firstLaunchDefaultsKey)
+        await showFirstLaunch()
+    }
+
+    /// Force-show the first-launch moment (used by a Settings "show welcome
+    /// again" button or for development testing).
+    func showFirstLaunch() async {
+        autoHideTask?.cancel()
+        if notch == nil { start() }
+        model.display = .firstLaunch
+        await notch?.expand(on: Self.preferredScreen)
+        autoHideTask = scheduleAutoHide(after: Self.firstLaunchAutoHideAfter)
     }
 
     /// Return to the resting compact state.
