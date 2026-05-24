@@ -13,8 +13,23 @@ struct ExpandedRouter: View {
             case .idle:
                 Color.clear.frame(width: 1, height: 1)
             case .popover:
-                NotchPopover(settings: presenter.settings, presenter: presenter)
+                if let store = presenter.sessionStore, let perm = presenter.permission {
+                    NotchPopover(
+                        settings: presenter.settings,
+                        sessionStore: store,
+                        permission: perm,
+                        presenter: presenter
+                    )
                     .transition(.blurReplace.combined(with: .scale(0.96)))
+                } else {
+                    NotchPopover(
+                        settings: presenter.settings,
+                        sessionStore: SessionStore(repository: nil),
+                        permission: AccessibilityPermission(),
+                        presenter: presenter
+                    )
+                    .transition(.blurReplace.combined(with: .scale(0.96)))
+                }
             case .correction(let result):
                 CorrectionCard(
                     result: result,

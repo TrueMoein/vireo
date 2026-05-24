@@ -66,6 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // Wire SessionStore into the coordinator so History refreshes
         // automatically after each save.
         coordinator.sessionStore = self.sessionStore
+        // Wire stores into the presenter so the rich popover can read them.
+        presenter.sessionStore = self.sessionStore
+        presenter.permission = self.permission
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

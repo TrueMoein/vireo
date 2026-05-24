@@ -19,6 +19,10 @@ final class NotchPresenter: ObservableObject {
     /// Wired by AppDelegate after both objects exist (they hold weak ↔ strong
     /// references). Used by CorrectionCard's action buttons.
     weak var coordinator: AppCoordinator?
+    /// Wired by AppDelegate. Used by NotchPopover to render rich content
+    /// (recent corrections, patterns, coach state).
+    weak var sessionStore: SessionStore?
+    weak var permission: AccessibilityPermission?
 
     static let hoverEnterDelay: Duration = .milliseconds(150)
     static let hoverLeaveDelay: Duration = .milliseconds(200)
