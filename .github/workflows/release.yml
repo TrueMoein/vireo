@@ -1,0 +1,89 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Cancel duplicate runs if a tag gets re-pushed.
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  # Needed for softprops/action-gh-release to create the release entry.
+  contents: write
+
+jobs:
+  release:
+    name: Build Vireo.app + attach to Release
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode.app
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-release-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+
+      - name: Build Vireo.app
+        run: bash scripts/build-app.sh release
+
+      - name: Zip the bundle
+        # `ditto -c -k --sequesterRsrc --keepParent` is Apple's canonical
+        # way to produce a Finder-equivalent zip of a .app bundle — preserves
+        # symlinks inside Frameworks/ and the code signature.
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent Vireo.app Vireo.app.zip
+          shasum -a 256 Vireo.app.zip > Vireo.app.zip.sha256
+          ls -lh Vireo.app.zip Vireo.app.zip.sha256
+
+      - name: Resolve version from tag
+        id: version
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Create / update Release + upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          # First-time installer guidance lives in the release body so
+          # users see it right next to the download button.
+          body: |
+            ## Install
+
+            1. Download `Vireo.app.zip` below and unzip it.
+            2. Drag `Vireo.app` into `/Applications`.
+            3. **First launch — bypass Gatekeeper:**
+               - macOS 15+ (Sequoia / Tahoe): open Vireo once, dismiss the warning, then go to **System Settings → Privacy & Security**, scroll to "Vireo was blocked…", and click **Open Anyway**.
+               - Older macOS: right-click `Vireo.app` → **Open** → click **Open** in the dialog.
+            4. Grant **Accessibility** when prompted (Vireo reads selected text and replaces corrections via the AX API).
+            5. Paste your OpenRouter API key in the onboarding wizard. It lives in macOS Keychain — never on a server.
+
+            Why Gatekeeper warns: Vireo is ad-hoc signed, not signed with an Apple Developer ID. The app is unchanged from what's in `main` at this tag — verify by comparing `Vireo.app.zip.sha256` to the value below.
+
+            ## Verify checksum
+
+            ```
+            shasum -a 256 Vireo.app.zip
+            ```
+
+            Match against `Vireo.app.zip.sha256` in the assets below.
+          files: |
+            Vireo.app.zip
+            Vireo.app.zip.sha256

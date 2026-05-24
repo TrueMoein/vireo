@@ -38,7 +38,24 @@ a per-mistake breakdown if you want to learn the rule, not just get the fix.
 
 ## Installation
 
+### Pre-built download (recommended)
+
+Grab the latest `Vireo.app.zip` from the [Releases page](https://github.com/TrueMoein/vireo/releases), unzip, and drag `Vireo.app` into `/Applications`.
+
+**First launch — bypass Gatekeeper once:**
+
+Vireo is ad-hoc signed (no $99/yr Apple Developer ID), so the first time you open it macOS will refuse with *"Vireo can't be opened because Apple cannot check it for malicious software."* Once you allow it, macOS remembers.
+
+- **macOS 15 (Sequoia) and newer:** double-click Vireo, dismiss the warning. Then go to **System Settings → Privacy & Security**, scroll to the *"Vireo was blocked…"* line, click **Open Anyway**. macOS will ask you to confirm one more time.
+- **Older macOS:** right-click `Vireo.app` → **Open** → click **Open** in the dialog. Done.
+
+Every subsequent launch is normal — no more warnings.
+
+You can verify the binary matches the source by comparing `shasum -a 256 Vireo.app.zip` against the `Vireo.app.zip.sha256` attached to the same release.
+
 ### From source
+
+If you have the toolchain installed:
 
 ```bash
 git clone https://github.com/TrueMoein/vireo
@@ -46,17 +63,13 @@ cd vireo
 bash scripts/run.sh
 ```
 
-`scripts/run.sh` wraps the SPM build in a proper `Vireo.app` bundle
-(bundle ID `co.vireo`), copies the Sparkle framework + SPM resource
-bundles next to the binary, ad-hoc-signs the result, and opens it.
+`scripts/run.sh` wraps the SPM build in a proper `Vireo.app` bundle (bundle ID `co.vireo`), copies the Sparkle framework + SPM resource bundles next to the binary, ad-hoc-signs the result, and opens it.
 
 ### Requirements
 
 - macOS 26 (Tahoe) or later — Liquid Glass UI requires it.
-- Xcode 17+ / Swift 6+.
-- An [OpenRouter](https://openrouter.ai/keys) API key (any model
-  with ≥30B parameters works well for grammar coaching; smaller models
-  may produce unreliable structured output).
+- For source build: Xcode 17+ / Swift 6+.
+- An [OpenRouter](https://openrouter.ai/keys) API key (any model with ≥30B parameters works well for grammar coaching; smaller models may produce unreliable structured output).
 
 ### First-launch onboarding
 
