@@ -101,7 +101,55 @@ actor SessionRepository {
         }
     }
 
+    /// Aggregate all logged mistakes into (category × rule) patterns,
+    /// grouped by category and sorted by total count. This is the read
+    /// model the Coach surfaces as "your most frequent patterns."
+    func categoryPatterns(limit: Int = 100) async throws -> [CategoryPattern] {
+        let rows = try await database.queue.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT category, rule, COUNT(*) AS cnt
+                FROM mistake
+                GROUP BY category, rule
+                ORDER BY cnt DESC
+                LIMIT ?
+            """, arguments: [limit])
+        }
+
+        var groups: [String: [RulePattern]] = [:]
+        for row in rows {
+            let category: String = row["category"]
+            let rule: String = row["rule"]
+            let count: Int = row["cnt"]
+            groups[category, default: []].append(RulePattern(rule: rule, count: count))
+        }
+
+        return groups.map { (category, rules) in
+            CategoryPattern(
+                category: category,
+                totalCount: rules.reduce(0) { $0 + $1.count },
+                rules: rules.sorted { $0.count > $1.count }
+            )
+        }
+        .sorted { $0.totalCount > $1.totalCount }
+    }
+
     enum RepositoryError: Error {
         case insertFailed
     }
+}
+
+/// One mistake category with its recurring rules, ranked by recurrence.
+struct CategoryPattern: Identifiable, Sendable, Hashable {
+    var id: String { category }
+    let category: String
+    let totalCount: Int
+    let rules: [RulePattern]
+}
+
+/// One specific rule the user keeps tripping on, with the number of times
+/// it's been corrected.
+struct RulePattern: Identifiable, Hashable, Sendable {
+    let rule: String
+    let count: Int
+    var id: String { rule }
 }

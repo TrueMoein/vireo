@@ -10,12 +10,13 @@ private let log = Logger(subsystem: "co.vireo", category: "SessionStore")
 @MainActor
 final class SessionStore: ObservableObject {
     @Published private(set) var sessions: [Session] = []
+    @Published private(set) var patterns: [CategoryPattern] = []
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var totalCount: Int = 0
 
     let repository: SessionRepository?
-    /// True when the database failed to open at app launch; History tab
-    /// can use this to show a clean error state instead of an empty list.
+    /// True when the database failed to open at app launch; tabs can use
+    /// this to show a clean error state instead of an empty list.
     let unavailable: Bool
 
     init(repository: SessionRepository?) {
@@ -23,8 +24,8 @@ final class SessionStore: ObservableObject {
         self.unavailable = repository == nil
     }
 
-    /// Refresh the list. If `search` is empty, returns the most recent.
-    /// Otherwise filters via SessionRepository.search.
+    /// Refresh the session list + total count + weakness patterns. If
+    /// `search` is empty, returns the most recent.
     func reload(search: String = "") async {
         guard let repository else { return }
         isLoading = true
@@ -35,9 +36,20 @@ final class SessionStore: ObservableObject {
                 ? try await repository.recentSessions()
                 : try await repository.search(search)
             totalCount = try await repository.totalSessionCount()
+            patterns = try await repository.categoryPatterns()
         } catch {
             log.error("reload failed: \(error.localizedDescription, privacy: .public)")
             sessions = []
+        }
+    }
+
+    /// Refresh only the patterns (e.g., on PatternsTab appearance).
+    func reloadPatterns() async {
+        guard let repository else { return }
+        do {
+            patterns = try await repository.categoryPatterns()
+        } catch {
+            log.error("reloadPatterns failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

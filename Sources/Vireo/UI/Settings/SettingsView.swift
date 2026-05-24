@@ -22,6 +22,9 @@ struct SettingsView: View {
             HistoryTab()
                 .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
 
+            PatternsTab()
+                .tabItem { Label("Patterns", systemImage: "chart.bar.doc.horizontal") }
+
             AccessTab()
                 .tabItem { Label("Access", systemImage: "lock.shield") }
         }
